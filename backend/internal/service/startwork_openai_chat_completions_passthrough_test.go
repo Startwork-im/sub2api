@@ -31,6 +31,25 @@ func TestBuildOpenAIChatCompletionsURL(t *testing.T) {
 	}
 }
 
+func TestBuildOpenAIChatPlatformCompletionsURL(t *testing.T) {
+	tests := []struct {
+		name string
+		base string
+		want string
+	}{
+		{name: "base host", base: "https://api.deepseek.com", want: "https://api.deepseek.com/chat/completions"},
+		{name: "v1 base", base: "https://token-plan-cn.xiaomimimo.com/v1", want: "https://token-plan-cn.xiaomimimo.com/v1/chat/completions"},
+		{name: "chat path", base: "https://api.deepseek.com/chat/completions", want: "https://api.deepseek.com/chat/completions"},
+		{name: "trailing slash", base: "https://api.deepseek.com/", want: "https://api.deepseek.com/chat/completions"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, buildOpenAIChatPlatformCompletionsURL(tt.base))
+		})
+	}
+}
+
 func TestShouldPassthroughOpenAICompatibleChatCompletions(t *testing.T) {
 	require.False(t, shouldPassthroughOpenAICompatibleChatCompletions(nil))
 	require.False(t, shouldPassthroughOpenAICompatibleChatCompletions(&Account{
@@ -38,11 +57,12 @@ func TestShouldPassthroughOpenAICompatibleChatCompletions(t *testing.T) {
 		Type:     AccountTypeOAuth,
 	}))
 	require.False(t, shouldPassthroughOpenAICompatibleChatCompletions(&Account{
-		Platform: PlatformOpenAI,
-		Type:     AccountTypeAPIKey,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"base_url": "https://api.openai-compatible.example/v1"},
 	}))
 	require.True(t, shouldPassthroughOpenAICompatibleChatCompletions(&Account{
-		Platform:    PlatformOpenAI,
+		Platform:    PlatformOpenAIChat,
 		Type:        AccountTypeAPIKey,
 		Credentials: map[string]any{"base_url": "https://api.deepseek.com/v1"},
 	}))

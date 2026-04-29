@@ -47,6 +47,10 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	if !h.ensureResponsesDependencies(c, reqLog) {
 		return
 	}
+	accountPlatform := service.PlatformOpenAI
+	if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformOpenAIChat {
+		accountPlatform = service.PlatformOpenAIChat
+	}
 
 	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 	if err != nil {
@@ -122,7 +126,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	for {
 		c.Set("openai_chat_completions_fallback_model", "")
 		reqLog.Debug("openai_chat_completions.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithScheduler(
+		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForPlatform(
 			c.Request.Context(),
 			apiKey.GroupID,
 			"",
@@ -131,6 +135,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			failedAccountIDs,
 			service.OpenAIUpstreamTransportAny,
 			false,
+			accountPlatform,
 		)
 		if err != nil {
 			reqLog.Warn("openai_chat_completions.account_select_failed",
@@ -142,11 +147,11 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 				if apiKey.Group != nil {
 					defaultModel = apiKey.Group.DefaultMappedModel
 				}
-				if defaultModel != "" && defaultModel != reqModel {
+				if accountPlatform == service.PlatformOpenAI && defaultModel != "" && defaultModel != reqModel {
 					reqLog.Info("openai_chat_completions.fallback_to_default_model",
 						zap.String("default_mapped_model", defaultModel),
 					)
-					selection, scheduleDecision, err = h.gatewayService.SelectAccountWithScheduler(
+					selection, scheduleDecision, err = h.gatewayService.SelectAccountWithSchedulerForPlatform(
 						c.Request.Context(),
 						apiKey.GroupID,
 						"",
@@ -155,6 +160,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						failedAccountIDs,
 						service.OpenAIUpstreamTransportAny,
 						false,
+						accountPlatform,
 					)
 					if err == nil && selection != nil {
 						c.Set("openai_chat_completions_fallback_model", defaultModel)
@@ -191,7 +197,10 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 		forwardStart := time.Now()
 
-		defaultMappedModel := resolveOpenAIForwardDefaultMappedModel(apiKey, c.GetString("openai_chat_completions_fallback_model"))
+		defaultMappedModel := ""
+		if accountPlatform == service.PlatformOpenAI {
+			defaultMappedModel = resolveOpenAIForwardDefaultMappedModel(apiKey, c.GetString("openai_chat_completions_fallback_model"))
+		}
 		forwardBody := body
 		if channelMapping.Mapped {
 			forwardBody = h.gatewayService.ReplaceModelInBody(body, channelMapping.MappedModel)

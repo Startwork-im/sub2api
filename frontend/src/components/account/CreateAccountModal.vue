@@ -111,6 +111,19 @@
           </button>
           <button
             type="button"
+            @click="form.platform = 'openai_chat'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'openai_chat'
+                ? 'bg-white text-teal-600 shadow-sm dark:bg-dark-600 dark:text-teal-400'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="terminal" size="sm" />
+            OpenAI Chat
+          </button>
+          <button
+            type="button"
             @click="form.platform = 'gemini'"
             :class="[
               'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
@@ -303,6 +316,10 @@
             </div>
           </button>
         </div>
+      </div>
+
+      <div v-if="form.platform === 'openai_chat'" class="rounded-lg border border-teal-200 bg-teal-50 p-4 text-sm text-teal-800 dark:border-teal-900/50 dark:bg-teal-950/30 dark:text-teal-200">
+        OpenAI Chat 平台仅支持 API Key 账号，Base URL 按你填写的路径直连，不会自动补 `/v1`。
       </div>
 
       <!-- Account Type Selection (Gemini) -->
@@ -858,6 +875,8 @@
             :placeholder="
               form.platform === 'openai'
                 ? 'https://api.openai.com'
+                : form.platform === 'openai_chat'
+                  ? 'https://api.deepseek.com'
                 : form.platform === 'gemini'
                   ? 'https://generativelanguage.googleapis.com'
                   : 'https://api.anthropic.com'
@@ -875,6 +894,8 @@
             :placeholder="
               form.platform === 'openai'
                 ? 'sk-proj-...'
+                : form.platform === 'openai_chat'
+                  ? 'sk-...'
                 : form.platform === 'gemini'
                   ? 'AIza...'
                   : 'sk-ant-...'
@@ -3007,12 +3028,14 @@ const oauthStepTitle = computed(() => {
 // Platform-specific hints for API Key type
 const baseUrlHint = computed(() => {
   if (form.platform === 'openai') return t('admin.accounts.openai.baseUrlHint')
+  if (form.platform === 'openai_chat') return 'OpenAI Chat 会在你填写的 Base URL 后追加 /chat/completions；如果供应商要求 /v1，请在 Base URL 中自行包含 /v1。'
   if (form.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
   return t('admin.accounts.baseUrlHint')
 })
 
 const apiKeyHint = computed(() => {
   if (form.platform === 'openai') return t('admin.accounts.openai.apiKeyHint')
+  if (form.platform === 'openai_chat') return '填写 OpenAI-compatible Chat Completions 供应商 API Key。'
   if (form.platform === 'gemini') return t('admin.accounts.gemini.apiKeyHint')
   return t('admin.accounts.apiKeyHint')
 })
@@ -3426,6 +3449,8 @@ watch(
     apiKeyBaseUrl.value =
       (newPlatform === 'openai')
         ? 'https://api.openai.com'
+        : newPlatform === 'openai_chat'
+          ? ''
         : newPlatform === 'gemini'
           ? 'https://generativelanguage.googleapis.com'
           : 'https://api.anthropic.com'
@@ -3441,6 +3466,9 @@ watch(
       antigravityWhitelistModels.value = []
       accountCategory.value = 'oauth-based'
       antigravityAccountType.value = 'oauth'
+    } else if (newPlatform === 'openai_chat') {
+      accountCategory.value = 'apikey'
+      addMethod.value = 'oauth'
     } else {
       allowOverages.value = false
       antigravityWhitelistModels.value = []
@@ -4132,6 +4160,8 @@ const handleSubmit = async () => {
   const defaultBaseUrl =
     form.platform === 'openai'
       ? 'https://api.openai.com'
+      : form.platform === 'openai_chat'
+        ? ''
       : form.platform === 'gemini'
         ? 'https://generativelanguage.googleapis.com'
         : 'https://api.anthropic.com'

@@ -1839,6 +1839,21 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		return
 	}
 
+	if account.IsOpenAIChat() {
+		mapping := account.GetModelMapping()
+		models := make([]openai.Model, 0, len(mapping))
+		for requestedModel := range mapping {
+			models = append(models, openai.Model{
+				ID:          requestedModel,
+				Object:      "model",
+				Type:        "model",
+				DisplayName: requestedModel,
+			})
+		}
+		response.Success(c, models)
+		return
+	}
+
 	// Handle Gemini accounts
 	if account.IsGemini() {
 		// For OAuth accounts: return default Gemini models

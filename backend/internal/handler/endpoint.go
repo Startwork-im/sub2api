@@ -85,6 +85,9 @@ func DeriveUpstreamEndpoint(inbound, rawRequestPath, platform string) string {
 		}
 		return EndpointResponses
 
+	case service.PlatformOpenAIChat:
+		return EndpointChatCompletions
+
 	case service.PlatformAnthropic:
 		return EndpointMessages
 

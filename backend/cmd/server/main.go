@@ -19,6 +19,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/setup"
 	"github.com/Wei-Shaw/sub2api/internal/web"
@@ -61,10 +62,16 @@ func main() {
 	// Parse command line flags
 	setupMode := flag.Bool("setup", false, "Run setup wizard in CLI mode")
 	showVersion := flag.Bool("version", false, "Show version information")
+	migrateOnly := flag.Bool("migrate-only", false, "Run database schema migrations and exit")
 	flag.Parse()
 
 	if *showVersion {
 		log.Printf("Sub2API %s (commit: %s, built: %s)\n", Version, Commit, Date)
+		return
+	}
+
+	if *migrateOnly {
+		runSchemaMigrationsOnly()
 		return
 	}
 
@@ -94,6 +101,31 @@ func main() {
 
 	// Normal server mode
 	runMainServer()
+}
+
+func runSchemaMigrationsOnly() {
+	if setup.NeedsSetup() {
+		if !setup.AutoSetupEnabled() {
+			log.Println("Setup is required and AUTO_SETUP is not enabled; skipping schema migrations")
+			return
+		}
+		log.Println("Auto setup required before schema migrations...")
+		if err := setup.AutoSetupFromEnv(); err != nil {
+			log.Fatalf("Auto setup failed before schema migrations: %v", err)
+		}
+	}
+
+	cfg, err := config.LoadForBootstrap()
+	if err != nil {
+		log.Fatalf("Failed to load config for schema migrations: %v", err)
+	}
+
+	migrationCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	if err := repository.ApplyMigrationsFromConfig(migrationCtx, cfg); err != nil {
+		log.Fatalf("Schema migrations failed: %v", err)
+	}
+	log.Println("Schema migrations completed successfully")
 }
 
 func runSetupServer() {
