@@ -18,7 +18,6 @@
 
 services:
   upstream-sub2api:
-    image: ${STARTWORK_SUB2API_IMAGE:-startwork/sub2api:latest}
     build:
       context: ..
       dockerfile: Dockerfile
