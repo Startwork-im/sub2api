@@ -1,0 +1,118 @@
+# =============================================================================
+# Startwork Sub2API Fork - Local Upstream Instance
+# =============================================================================
+# This compose file is intentionally not named like the default Sub2API runtime.
+# It is used as an upstream Sub2API instance during Startwork local testing.
+#
+# It must not conflict with the Startwork cluster Sub2API service, which is
+# normally started by /home/k/Startwork/deployment/docker-compose.yml as:
+#   project: startwork
+#   service: sub2api
+#   host port: 18080
+#
+# This upstream test instance defaults to:
+#   project: startwork-upstream-sub2api
+#   containers: startwork-upstream-sub2api-*
+#   host port: 18081
+# =============================================================================
+
+services:
+  upstream-sub2api:
+    image: ${STARTWORK_SUB2API_IMAGE:-startwork/sub2api:latest}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: startwork-upstream-sub2api
+    restart: unless-stopped
+    ports:
+      - "${STARTWORK_UPSTREAM_SUB2API_BIND_HOST:-127.0.0.1}:${STARTWORK_UPSTREAM_SUB2API_PORT:-18081}:8080"
+    volumes:
+      - ./startwork_upstream_data:/app/data
+    environment:
+      AUTO_SETUP: "true"
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: "8080"
+      SERVER_MODE: ${SERVER_MODE:-debug}
+      RUN_MODE: ${RUN_MODE:-standard}
+      DATABASE_HOST: upstream-postgres
+      DATABASE_PORT: "5432"
+      DATABASE_USER: ${POSTGRES_USER:-sub2api}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-sub2api}
+      DATABASE_DBNAME: ${POSTGRES_DB:-sub2api}
+      DATABASE_SSLMODE: disable
+      REDIS_HOST: upstream-redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: ${REDIS_DB:-0}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@startwork-upstream-sub2api.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-startwork-upstream-sub2api-admin}
+      JWT_SECRET: ${JWT_SECRET:-startwork-upstream-sub2api-jwt-secret-2026}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      TZ: ${TZ:-Asia/Shanghai}
+      SECURITY_URL_ALLOWLIST_ENABLED: "false"
+      SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP: "true"
+      SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS: "true"
+      NO_PROXY: ${NO_PROXY:-},localhost,127.0.0.1,::1,upstream-sub2api,upstream-postgres,upstream-redis
+      no_proxy: ${no_proxy:-},localhost,127.0.0.1,::1,upstream-sub2api,upstream-postgres,upstream-redis
+    depends_on:
+      upstream-postgres:
+        condition: service_healthy
+      upstream-redis:
+        condition: service_healthy
+    networks:
+      - startwork-upstream-sub2api-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  upstream-postgres:
+    image: postgres:18-alpine
+    container_name: startwork-upstream-sub2api-postgres
+    restart: unless-stopped
+    volumes:
+      - ./startwork_upstream_postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sub2api}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sub2api}
+      POSTGRES_DB: ${POSTGRES_DB:-sub2api}
+      PGDATA: /var/lib/postgresql/data
+      TZ: ${TZ:-Asia/Shanghai}
+    networks:
+      - startwork-upstream-sub2api-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sub2api} -d ${POSTGRES_DB:-sub2api}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  upstream-redis:
+    image: redis:8-alpine
+    container_name: startwork-upstream-sub2api-redis
+    restart: unless-stopped
+    volumes:
+      - ./startwork_upstream_redis_data:/data
+    command:
+      - sh
+      - -c
+      - >-
+        redis-server --save 60 1 --appendonly yes --appendfsync everysec
+        ${REDIS_PASSWORD:+--requirepass "$REDIS_PASSWORD"}
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      REDISCLI_AUTH: ${REDIS_PASSWORD:-}
+    networks:
+      - startwork-upstream-sub2api-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+networks:
+  startwork-upstream-sub2api-network:
+    driver: bridge
