@@ -129,6 +129,13 @@ jobs:
                 body: `自动合并上游 Sub2API tag \`${tag}\` 到 Startwork 维护分支。合并后会由 Docker release workflow 构建并自动部署生产。`
               });
             } catch (error) {
-              if (error.status !== 422) throw error;
-              core.info('Pull request already exists or branch has no diff.');
+              if (error.status === 422) {
+                core.info('Pull request already exists or branch has no diff.');
+                return;
+              }
+              if (error.status === 403) {
+                core.warning('GitHub Actions cannot create pull requests in this repository. The sync branch was pushed successfully; create or merge the PR manually if needed.');
+                return;
+              }
+              throw error;
             }
