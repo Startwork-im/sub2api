@@ -98,8 +98,6 @@ jobs:
           PROD_SUB2API_HEALTH_URL: ${{ secrets.PROD_SUB2API_HEALTH_URL }}
           PROD_SUB2API_RUNTIME_BASE_URL: ${{ secrets.PROD_SUB2API_RUNTIME_BASE_URL }}
           PROD_SUB2API_SMOKE_KEY: ${{ secrets.PROD_SUB2API_SMOKE_KEY }}
-          PROD_DEEPSEEK_SMOKE_KEY: ${{ secrets.PROD_DEEPSEEK_SMOKE_KEY }}
-          PROD_XIAOMI_MIMO_SMOKE_KEY: ${{ secrets.PROD_XIAOMI_MIMO_SMOKE_KEY }}
         run: |
           set -euo pipefail
           test -n "$PROD_SSH_HOST"
@@ -107,11 +105,18 @@ jobs:
           test -n "$PROD_SSH_KEY"
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          printf '%s
-' "$PROD_SSH_KEY" > ~/.ssh/id_rsa
+          printf '%s\n' "$PROD_SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H "$PROD_SSH_HOST" >> ~/.ssh/known_hosts
-          ssh "$PROD_SSH_USER@$PROD_SSH_HOST"             IMAGE_REF="$IMAGE_REF"             PROD_SUB2API_COMPOSE_DIR="${PROD_SUB2API_COMPOSE_DIR:-/opt/startwork/deployment}"             PROD_SUB2API_SERVICE="${PROD_SUB2API_SERVICE:-sub2api}"             PROD_SUB2API_CONTAINER="${PROD_SUB2API_CONTAINER:-startwork-sub2api-1}"             PROD_SUB2API_HEALTH_URL="${PROD_SUB2API_HEALTH_URL:-http://127.0.0.1:18080/health}"             PROD_SUB2API_RUNTIME_BASE_URL="${PROD_SUB2API_RUNTIME_BASE_URL:-http://127.0.0.1:18080}"             PROD_SUB2API_SMOKE_KEY="${PROD_SUB2API_SMOKE_KEY:-}"             PROD_DEEPSEEK_SMOKE_KEY="${PROD_DEEPSEEK_SMOKE_KEY:-}"             PROD_XIAOMI_MIMO_SMOKE_KEY="${PROD_XIAOMI_MIMO_SMOKE_KEY:-}"             'bash -s' <<'REMOTE'
+          ssh "$PROD_SSH_USER@$PROD_SSH_HOST" \
+            IMAGE_REF="$IMAGE_REF" \
+            PROD_SUB2API_COMPOSE_DIR="${PROD_SUB2API_COMPOSE_DIR:-/opt/startwork/deployment}" \
+            PROD_SUB2API_SERVICE="${PROD_SUB2API_SERVICE:-sub2api}" \
+            PROD_SUB2API_CONTAINER="${PROD_SUB2API_CONTAINER:-startwork-sub2api-1}" \
+            PROD_SUB2API_HEALTH_URL="${PROD_SUB2API_HEALTH_URL:-http://127.0.0.1:18080/health}" \
+            PROD_SUB2API_RUNTIME_BASE_URL="${PROD_SUB2API_RUNTIME_BASE_URL:-http://127.0.0.1:18080}" \
+            PROD_SUB2API_SMOKE_KEY="${PROD_SUB2API_SMOKE_KEY:-}" \
+            'bash -s' <<'REMOTE'
           set -euo pipefail
           compose_dir="$PROD_SUB2API_COMPOSE_DIR"
           service="$PROD_SUB2API_SERVICE"
