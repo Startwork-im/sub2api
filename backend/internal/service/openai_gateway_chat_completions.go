@@ -171,12 +171,16 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		}
 	}
 
+	if result, handled, err := s.tryForwardOpenAICompatibleChatCompletionsPassthrough(ctx, c, account, body, originalModel, billingModel, upstreamModel, clientStream, includeUsage, startTime); handled {
+		return result, err
+	}
+
 	// 4b. Apply OpenAI fast policy (may filter service_tier or block the request).
 	updatedBody, policyErr := s.applyOpenAIFastPolicyToBody(ctx, account, upstreamModel, responsesBody)
 	if policyErr != nil {
 		var blocked *OpenAIFastBlockedError
 		if errors.As(policyErr, &blocked) {
-			writeChatCompletionsError(c, http.StatusForbidden, "permission_error", blocked.Message)
+			writeChatCompletionsError(c, http.StatusForbidden, permission_error, blocked.Message)
 		}
 		return nil, policyErr
 	}
