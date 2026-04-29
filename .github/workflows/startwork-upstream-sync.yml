@@ -1,0 +1,129 @@
+name: Startwork upstream tag sync
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: 'Official Sub2API tag to sync. Empty means latest semver-like tag.'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  sync-upstream-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Startwork fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Configure git identity
+        run: |
+          git config user.name 'startwork-sub2api-sync[bot]'
+          git config user.email 'startwork-sub2api-sync@users.noreply.github.com'
+
+      - name: Resolve upstream tag
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/Wei-Shaw/sub2api.git 2>/dev/null || git remote set-url upstream https://github.com/Wei-Shaw/sub2api.git
+          git fetch upstream --tags --force
+          tag='${{ inputs.upstream_tag }}'
+          if [ -z "$tag" ]; then
+            tag=$(git tag -l 'v*' | sort -V | tail -n 1)
+          fi
+          if [ -z "$tag" ]; then
+            echo 'No upstream tag found' >&2
+            exit 1
+          fi
+          branch="sync/upstream-${tag}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Skip when sync branch already exists
+        id: exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --heads origin '${{ steps.resolve.outputs.branch }}' >/dev/null 2>&1; then
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'exists=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge upstream tag
+        if: steps.exists.outputs.exists == 'false'
+        id: merge
+        shell: bash
+        run: |
+          set +e
+          git checkout -B '${{ steps.resolve.outputs.branch }}' origin/main
+          git merge --no-edit '${{ steps.resolve.outputs.tag }}'
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            git diff --name-only --diff-filter=U > /tmp/sub2api-conflicts.txt || true
+            echo 'conflicted=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo 'conflicted=false' >> "$GITHUB_OUTPUT"
+          git push origin '${{ steps.resolve.outputs.branch }}'
+
+      - name: Create conflict issue
+        if: steps.exists.outputs.exists == 'false' && steps.merge.outputs.conflicted == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const tag = '${{ steps.resolve.outputs.tag }}';
+            const conflicts = fs.existsSync('/tmp/sub2api-conflicts.txt')
+              ? fs.readFileSync('/tmp/sub2api-conflicts.txt', 'utf8').trim()
+              : '';
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `上游 Sub2API ${tag} 同步冲突`,
+              body: `自动同步上游 tag \`${tag}\` 时发生 merge conflict。
+
+冲突文件：
+
+\`\`\`
+${conflicts || '(workflow did not capture conflict files)'}
+\`\`\`
+
+生产镜像发布和部署已阻断，需要人工处理。`,
+              labels: ['upstream-sync', 'blocked']
+            });
+
+      - name: Fail on conflict
+        if: steps.exists.outputs.exists == 'false' && steps.merge.outputs.conflicted == 'true'
+        run: exit 1
+
+      - name: Create sync pull request
+        if: steps.exists.outputs.exists == 'false' && steps.merge.outputs.conflicted == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = '${{ steps.resolve.outputs.tag }}';
+            const branch = '${{ steps.resolve.outputs.branch }}';
+            try {
+              await github.rest.pulls.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `同步上游 Sub2API ${tag}`,
+                head: branch,
+                base: 'main',
+                body: `自动合并上游 Sub2API tag \`${tag}\` 到 Startwork 维护分支。合并后会由 Docker release workflow 构建并自动部署生产。`
+              });
+            } catch (error) {
+              if (error.status !== 422) throw error;
+              core.info('Pull request already exists or branch has no diff.');
+            }
