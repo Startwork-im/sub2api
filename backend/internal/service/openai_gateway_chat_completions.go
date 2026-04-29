@@ -171,6 +171,10 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		}
 	}
 
+	if result, handled, err := s.tryForwardOpenAICompatibleChatCompletionsPassthrough(ctx, c, account, body, originalModel, billingModel, upstreamModel, clientStream, includeUsage, startTime); handled {
+		return result, err
+	}
+
 	// 5. Get access token
 	token, _, err := s.GetAccessToken(ctx, account)
 	if err != nil {
