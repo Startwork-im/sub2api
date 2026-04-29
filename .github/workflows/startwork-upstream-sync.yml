@@ -89,19 +89,22 @@ jobs:
             const conflicts = fs.existsSync('/tmp/sub2api-conflicts.txt')
               ? fs.readFileSync('/tmp/sub2api-conflicts.txt', 'utf8').trim()
               : '';
+            const body = [
+              `自动同步上游 tag \`${tag}\` 时发生 merge conflict。`,
+              '',
+              '冲突文件：',
+              '',
+              '```',
+              conflicts || '(workflow did not capture conflict files)',
+              '```',
+              '',
+              '生产镜像发布和部署已阻断，需要人工处理。'
+            ].join('\n');
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               title: `上游 Sub2API ${tag} 同步冲突`,
-              body: `自动同步上游 tag \`${tag}\` 时发生 merge conflict。
-
-冲突文件：
-
-\`\`\`
-${conflicts || '(workflow did not capture conflict files)'}
-\`\`\`
-
-生产镜像发布和部署已阻断，需要人工处理。`,
+              body,
               labels: ['upstream-sync', 'blocked']
             });
 
