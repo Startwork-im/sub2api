@@ -1,7 +1,11 @@
-name: Startwork Docker release and production deploy
+name: Startwork Docker build and optional release
 
 on:
   push:
+    branches:
+      - main
+      - 'sync/upstream-*'
+  pull_request:
     branches:
       - main
   workflow_dispatch:
@@ -10,31 +14,35 @@ on:
         description: 'Extra Docker image tag. Defaults to git-<sha>.'
         required: false
         type: string
-      deploy_production:
-        description: 'Deploy to production after push.'
+      push_image:
+        description: 'Push image to Docker Hub when Docker Hub secrets exist.'
         required: false
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
   packages: read
 
 concurrency:
-  group: startwork-sub2api-production
+  group: startwork-sub2api-build-${{ github.ref }}
   cancel-in-progress: false
 
 env:
   IMAGE_NAME: startwork/sub2api
 
 jobs:
-  build-and-push:
+  build-and-maybe-push:
     runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ steps.meta.outputs.image_tag }}
       image_ref: ${{ steps.meta.outputs.image_ref }}
+      image_pushed: ${{ steps.push_decision.outputs.image_pushed }}
     env:
       REQUESTED_IMAGE_TAG: ${{ github.event.inputs.image_tag }}
+      REQUESTED_PUSH_IMAGE: ${{ github.event.inputs.push_image }}
+      DOCKERHUB_USERNAME_VALUE: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN_VALUE: ${{ secrets.DOCKERHUB_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -60,16 +68,49 @@ jobs:
           echo "image_ref=${IMAGE_NAME}:$tag" >> "$GITHUB_OUTPUT"
           echo "labels=$labels" >> "$GITHUB_OUTPUT"
 
+      - name: Decide push mode
+        id: push_decision
+        shell: bash
+        run: |
+          set -euo pipefail
+          can_push=false
+          reason="not_main_or_not_requested"
+          if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+            if [ "${GITHUB_EVENT_NAME}" = "push" ] || [ "$REQUESTED_PUSH_IMAGE" = "true" ]; then
+              if [ -n "$DOCKERHUB_USERNAME_VALUE" ] && [ -n "$DOCKERHUB_TOKEN_VALUE" ]; then
+                can_push=true
+                reason="dockerhub_secrets_present"
+              else
+                reason="dockerhub_secrets_missing"
+              fi
+            fi
+          fi
+          echo "can_push=$can_push" >> "$GITHUB_OUTPUT"
+          echo "image_pushed=false" >> "$GITHUB_OUTPUT"
+          echo "Push decision: $can_push ($reason)"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image without pushing
+        if: steps.push_decision.outputs.can_push != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: ${{ steps.meta.outputs.image_ref }}
+          labels: ${{ steps.meta.outputs.labels }}
+
       - name: Login to Docker Hub
+        if: steps.push_decision.outputs.can_push == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push
+      - name: Build and push image
+        if: steps.push_decision.outputs.can_push == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -80,86 +121,25 @@ jobs:
             ${{ env.IMAGE_NAME }}:latest
           labels: ${{ steps.meta.outputs.labels }}
 
-  deploy-production:
-    runs-on: ubuntu-latest
-    needs: build-and-push
-    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.inputs.deploy_production == 'true') }}
-    steps:
-      - name: Deploy with rollback
+      - name: Mark image pushed
+        if: steps.push_decision.outputs.can_push == 'true'
+        id: pushed
         shell: bash
-        env:
-          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
-          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
-          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
-          IMAGE_REF: ${{ needs.build-and-push.outputs.image_ref }}
-          PROD_SUB2API_COMPOSE_DIR: ${{ secrets.PROD_SUB2API_COMPOSE_DIR }}
-          PROD_SUB2API_SERVICE: ${{ secrets.PROD_SUB2API_SERVICE }}
-          PROD_SUB2API_CONTAINER: ${{ secrets.PROD_SUB2API_CONTAINER }}
-          PROD_SUB2API_HEALTH_URL: ${{ secrets.PROD_SUB2API_HEALTH_URL }}
-          PROD_SUB2API_RUNTIME_BASE_URL: ${{ secrets.PROD_SUB2API_RUNTIME_BASE_URL }}
-          PROD_SUB2API_SMOKE_KEY: ${{ secrets.PROD_SUB2API_SMOKE_KEY }}
         run: |
-          set -euo pipefail
-          test -n "$PROD_SSH_HOST"
-          test -n "$PROD_SSH_USER"
-          test -n "$PROD_SSH_KEY"
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$PROD_SSH_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H "$PROD_SSH_HOST" >> ~/.ssh/known_hosts
-          ssh "$PROD_SSH_USER@$PROD_SSH_HOST" \
-            IMAGE_REF="$IMAGE_REF" \
-            PROD_SUB2API_COMPOSE_DIR="${PROD_SUB2API_COMPOSE_DIR:-/opt/startwork/deployment}" \
-            PROD_SUB2API_SERVICE="${PROD_SUB2API_SERVICE:-sub2api}" \
-            PROD_SUB2API_CONTAINER="${PROD_SUB2API_CONTAINER:-startwork-sub2api-1}" \
-            PROD_SUB2API_HEALTH_URL="${PROD_SUB2API_HEALTH_URL:-http://127.0.0.1:18080/health}" \
-            PROD_SUB2API_RUNTIME_BASE_URL="${PROD_SUB2API_RUNTIME_BASE_URL:-http://127.0.0.1:18080}" \
-            PROD_SUB2API_SMOKE_KEY="${PROD_SUB2API_SMOKE_KEY:-}" \
-            'bash -s' <<'REMOTE'
-          set -euo pipefail
-          compose_dir="$PROD_SUB2API_COMPOSE_DIR"
-          service="$PROD_SUB2API_SERVICE"
-          container="$PROD_SUB2API_CONTAINER"
-          health_url="$PROD_SUB2API_HEALTH_URL"
-          runtime_base_url="${PROD_SUB2API_RUNTIME_BASE_URL%/}"
-          previous_image=$(docker inspect "$container" --format '{{.Config.Image}}')
-          previous_id=$(docker inspect "$previous_image" --format '{{.Id}}')
-          rollback_tag="startwork/sub2api:rollback-$(date -u +%Y%m%d%H%M%S)"
-          docker tag "$previous_id" "$rollback_tag"
-          echo "previous_image=$previous_image"
-          echo "rollback_tag=$rollback_tag"
-          echo "new_image=$IMAGE_REF"
-          docker pull "$IMAGE_REF"
-          docker tag "$IMAGE_REF" "$previous_image"
-          cd "$compose_dir"
-          docker compose -p startwork up -d --no-deps --force-recreate "$service"
-          check_health() {
-            for _ in $(seq 1 30); do
-              if curl -fsS --max-time 5 "$health_url" >/tmp/sub2api-health.out; then
-                cat /tmp/sub2api-health.out
-                return 0
-              fi
-              sleep 2
-            done
-            return 1
-          }
-          smoke() {
-            check_health
-            docker exec startwork-server-1 sh -lc 'wget -qO- http://sub2api:8080/health' >/tmp/startwork-sub2api-health.out
-            cat /tmp/startwork-sub2api-health.out
-            if [ -n "$PROD_SUB2API_SMOKE_KEY" ]; then
-              curl -fsS --max-time 30 "$runtime_base_url/v1/models" -H "Authorization: Bearer $PROD_SUB2API_SMOKE_KEY" >/tmp/sub2api-models.out
-              head -c 500 /tmp/sub2api-models.out
-              echo
+          echo "image_pushed=true" >> "$GITHUB_OUTPUT"
+          echo "Pushed ${{ steps.meta.outputs.image_ref }}"
+
+      - name: Build summary
+        shell: bash
+        run: |
+          {
+            echo '## Startwork Sub2API build'
+            echo
+            echo "- Image ref: \`${{ steps.meta.outputs.image_ref }}\`"
+            echo "- Branch: \`${GITHUB_REF}\`"
+            echo "- Event: \`${GITHUB_EVENT_NAME}\`"
+            echo "- Docker push enabled: \`${{ steps.push_decision.outputs.can_push }}\`"
+            if [ "${{ steps.push_decision.outputs.can_push }}" != "true" ]; then
+              echo "- Docker push skipped: missing Docker Hub secrets, non-main branch, PR, or push not requested."
             fi
-          }
-          if ! smoke; then
-            echo 'Smoke checks failed. Rolling back Sub2API image.' >&2
-            docker tag "$rollback_tag" "$previous_image"
-            docker compose -p startwork up -d --no-deps --force-recreate "$service"
-            check_health || true
-            exit 1
-          fi
-          echo "Sub2API production deploy completed: $IMAGE_REF"
-          REMOTE
+          } >> "$GITHUB_STEP_SUMMARY"
