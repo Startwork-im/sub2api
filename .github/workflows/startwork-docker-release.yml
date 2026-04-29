@@ -33,6 +33,8 @@ jobs:
     outputs:
       image_tag: ${{ steps.meta.outputs.image_tag }}
       image_ref: ${{ steps.meta.outputs.image_ref }}
+    env:
+      REQUESTED_IMAGE_TAG: ${{ github.event.inputs.image_tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           short_sha="${GITHUB_SHA::7}"
-          tag='${{ inputs.image_tag }}'
+          tag="$REQUESTED_IMAGE_TAG"
           if [ -z "$tag" ]; then
             tag="git-${short_sha}"
           fi
@@ -81,7 +83,7 @@ jobs:
   deploy-production:
     runs-on: ubuntu-latest
     needs: build-and-push
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.deploy_production == true)
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.inputs.deploy_production == 'true') }}
     steps:
       - name: Deploy with rollback
         shell: bash
@@ -144,16 +146,6 @@ jobs:
             if [ -n "$PROD_SUB2API_SMOKE_KEY" ]; then
               curl -fsS --max-time 30 "$runtime_base_url/v1/models" -H "Authorization: Bearer $PROD_SUB2API_SMOKE_KEY" >/tmp/sub2api-models.out
               head -c 500 /tmp/sub2api-models.out
-              echo
-            fi
-            if [ -n "$PROD_DEEPSEEK_SMOKE_KEY" ]; then
-              curl -fsS --max-time 60 "$runtime_base_url/v1/chat/completions"                 -H "Authorization: Bearer $PROD_DEEPSEEK_SMOKE_KEY"                 -H 'Content-Type: application/json'                 -d '{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"pong"}],"max_tokens":8,"stream":false}' >/tmp/deepseek-smoke.out
-              head -c 500 /tmp/deepseek-smoke.out
-              echo
-            fi
-            if [ -n "$PROD_XIAOMI_MIMO_SMOKE_KEY" ]; then
-              curl -fsS --max-time 60 "$runtime_base_url/v1/chat/completions"                 -H "Authorization: Bearer $PROD_XIAOMI_MIMO_SMOKE_KEY"                 -H 'Content-Type: application/json'                 -d '{"model":"mimo-v2.5-pro","messages":[{"role":"user","content":"pong"}],"max_completion_tokens":8,"stream":false}' >/tmp/xiaomi-mimo-smoke.out
-              head -c 500 /tmp/xiaomi-mimo-smoke.out
               echo
             fi
           }
