@@ -14,6 +14,7 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
+  actions: write
 
 jobs:
   sync-upstream-tag:
@@ -139,3 +140,21 @@ jobs:
               }
               throw error;
             }
+
+
+      - name: Dispatch Docker build for sync branch
+        if: steps.merge.outputs.conflicted != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = '${{ steps.resolve.outputs.branch }}';
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'startwork-docker-release.yml',
+              ref: branch,
+              inputs: {
+                push_image: 'false'
+              }
+            });
+            core.info(`Dispatched Docker build for ${branch}.`);
