@@ -1,6 +1,7 @@
 package service
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestBuildOpenAIChatCompletionsURL(t *testing.T) {
@@ -93,4 +95,33 @@ func TestBuildOpenAICompatibleChatCompletionsPassthroughRequestUsesChatPath(t *t
 	require.Equal(t, "https://api.deepseek.com/v1/chat/completions", req.URL.String())
 	require.Equal(t, "Bearer upstream-key", req.Header.Get("Authorization"))
 	require.Empty(t, req.Header.Get("x-api-key"))
+}
+
+func TestBuildOpenAICompatibleChatCompletionsPassthroughRequestAddsStreamUsageForOpenAIChat(t *testing.T) {
+	cfg := &config.Config{
+		Security: config.SecurityConfig{
+			URLAllowlist: config.URLAllowlistConfig{Enabled: false},
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"mimo-v2.5-pro"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	account := &Account{
+		Platform:    PlatformOpenAIChat,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"base_url": "https://token-plan-cn.xiaomimimo.com/v1"},
+	}
+
+	body := []byte(`{"model":"mimo-v2.5-pro","messages":[{"role":"user","content":"hi"}],"stream":true}`)
+	req, err := svc.buildOpenAICompatibleChatCompletionsPassthroughRequest(c.Request.Context(), c, account, body, "sk-mimo")
+	require.NoError(t, err)
+	require.NotNil(t, req)
+
+	updated, err := io.ReadAll(req.Body)
+	require.NoError(t, err)
+	require.True(t, gjson.GetBytes(updated, "stream_options.include_usage").Bool())
 }

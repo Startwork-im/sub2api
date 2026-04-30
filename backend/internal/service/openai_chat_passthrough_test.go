@@ -11,6 +11,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestOpenAIGatewayService_OpenAIChatPassthrough_UsesChatCompletionsPath(t *testing.T) {
@@ -104,4 +105,5 @@ func TestOpenAIGatewayService_OpenAIChatPassthrough_XiaomiV1BaseURLUsesChatPlatf
 	require.Equal(t, "https://token-plan-cn.xiaomimimo.com/v1/chat/completions", upstream.lastReq.URL.String())
 	require.Empty(t, upstream.lastReq.Header.Get("x-api-key"))
 	require.Equal(t, "Bearer sk-mimo", upstream.lastReq.Header.Get("authorization"))
+	require.True(t, gjson.GetBytes(upstream.lastBody, "stream_options.include_usage").Bool())
 }

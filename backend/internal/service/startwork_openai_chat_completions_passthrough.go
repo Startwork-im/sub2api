@@ -160,6 +160,7 @@ func (s *OpenAIGatewayService) buildOpenAICompatibleChatCompletionsPassthroughRe
 	targetURL := buildOpenAIChatCompletionsURL(validatedURL)
 	if account.Platform == PlatformOpenAIChat {
 		targetURL = buildOpenAIChatPlatformCompletionsURL(validatedURL)
+		body = ensureOpenAIChatStreamIncludeUsage(body)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
@@ -188,6 +189,20 @@ func (s *OpenAIGatewayService) buildOpenAICompatibleChatCompletionsPassthroughRe
 		req.Header.Set("content-type", "application/json")
 	}
 	return req, nil
+}
+
+func ensureOpenAIChatStreamIncludeUsage(body []byte) []byte {
+	if !gjson.GetBytes(body, "stream").Bool() {
+		return body
+	}
+	if gjson.GetBytes(body, "stream_options.include_usage").Exists() {
+		return body
+	}
+	updated, err := sjson.SetBytes(body, "stream_options.include_usage", true)
+	if err != nil {
+		return body
+	}
+	return updated
 }
 
 func (s *OpenAIGatewayService) handleOpenAICompatibleChatCompletionsPassthroughJSON(
