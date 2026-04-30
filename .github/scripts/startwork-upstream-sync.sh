@@ -165,7 +165,7 @@ main() {
   patch_commit_count=0
   if [ -n "$patch_source_branch" ]; then
     patch_source_tag="$(normalize_branch_tag "$patch_source_branch")"
-    mapfile -t patch_commits < <(git rev-list --reverse "refs/tags/${patch_source_tag}..refs/remotes/${ORIGIN_REMOTE_NAME}/${patch_source_branch}")
+    mapfile -t patch_commits < <(git rev-list --reverse --no-merges "refs/tags/${patch_source_tag}..refs/remotes/${ORIGIN_REMOTE_NAME}/${patch_source_branch}")
     patch_commit_count="${#patch_commits[@]}"
     for commit in "${patch_commits[@]}"; do
       if ! git cherry-pick "$commit"; then

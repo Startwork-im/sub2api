@@ -35,6 +35,7 @@ jobs:
 
       - name: Create conflict issue
         if: steps.sync.outputs.status == 'conflict'
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           script: |
