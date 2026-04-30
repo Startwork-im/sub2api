@@ -12,86 +12,47 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
   issues: write
-  actions: write
 
 jobs:
   sync-upstream-tag:
     runs-on: ubuntu-latest
     env:
       REQUESTED_UPSTREAM_TAG: ${{ github.event.inputs.upstream_tag }}
+      FEISHU_WEBHOOK: ${{ secrets.STARTWORK_FEISHU_WEBHOOK }}
     steps:
       - name: Checkout Startwork fork
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Configure git identity
-        run: |
-          git config user.name 'startwork-sub2api-sync[bot]'
-          git config user.email 'startwork-sub2api-sync@users.noreply.github.com'
-
-      - name: Resolve upstream tag
-        id: resolve
+      - name: Sync latest upstream tag branch
+        id: sync
         shell: bash
         run: |
-          set -euo pipefail
-          git remote add upstream https://github.com/Wei-Shaw/sub2api.git 2>/dev/null || git remote set-url upstream https://github.com/Wei-Shaw/sub2api.git
-          git fetch upstream --tags --force
-          tag="$REQUESTED_UPSTREAM_TAG"
-          if [ -z "$tag" ]; then
-            tag=$(git tag -l 'v*' | sort -V | tail -n 1)
-          fi
-          if [ -z "$tag" ]; then
-            echo 'No upstream tag found' >&2
-            exit 1
-          fi
-          branch="sync/upstream-${tag}"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "branch=$branch" >> "$GITHUB_OUTPUT"
-
-      - name: Skip when sync branch already exists
-        id: exists
-        shell: bash
-        run: |
-          set -euo pipefail
-          if git ls-remote --exit-code --heads origin '${{ steps.resolve.outputs.branch }}' >/dev/null 2>&1; then
-            echo 'exists=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'exists=false' >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Merge upstream tag
-        if: steps.exists.outputs.exists == 'false'
-        id: merge
-        shell: bash
-        run: |
-          set +e
-          git checkout -B '${{ steps.resolve.outputs.branch }}' origin/main
-          git merge --no-edit '${{ steps.resolve.outputs.tag }}'
-          rc=$?
-          if [ $rc -ne 0 ]; then
-            git diff --name-only --diff-filter=U > /tmp/sub2api-conflicts.txt || true
-            echo 'conflicted=true' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo 'conflicted=false' >> "$GITHUB_OUTPUT"
-          git push origin '${{ steps.resolve.outputs.branch }}'
+          bash .github/scripts/startwork-upstream-sync.sh
 
       - name: Create conflict issue
-        if: steps.exists.outputs.exists == 'false' && steps.merge.outputs.conflicted == 'true'
+        if: steps.sync.outputs.status == 'conflict'
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const tag = '${{ steps.resolve.outputs.tag }}';
-            const conflicts = fs.existsSync('/tmp/sub2api-conflicts.txt')
-              ? fs.readFileSync('/tmp/sub2api-conflicts.txt', 'utf8').trim()
+            const tag = '${{ steps.sync.outputs.target_tag }}';
+            const branch = '${{ steps.sync.outputs.target_branch }}';
+            const patchSourceBranch = '${{ steps.sync.outputs.patch_source_branch }}' || '(none)';
+            const conflictCommit = '${{ steps.sync.outputs.conflict_commit }}';
+            const conflictFile = '${{ steps.sync.outputs.conflict_file }}';
+            const conflicts = conflictFile && fs.existsSync(conflictFile)
+              ? fs.readFileSync(conflictFile, 'utf8').trim()
               : '';
             const body = [
-              `自动同步上游 tag \`${tag}\` 时发生 merge conflict。`,
+              `自动同步上游 tag \`${tag}\` 时应用 Startwork patch 发生冲突。`,
+              '',
+              `目标分支：\`${branch}\``,
+              `补丁来源：\`${patchSourceBranch}\``,
+              `冲突提交：\`${conflictCommit}\``,
               '',
               '冲突文件：',
               '',
@@ -99,7 +60,7 @@ jobs:
               conflicts || '(workflow did not capture conflict files)',
               '```',
               '',
-              '生产镜像发布和部署已阻断，需要人工处理。'
+              '需要人工处理后再继续生产更新。'
             ].join('\n');
             await github.rest.issues.create({
               owner: context.repo.owner,
@@ -110,51 +71,33 @@ jobs:
             });
 
       - name: Fail on conflict
-        if: steps.exists.outputs.exists == 'false' && steps.merge.outputs.conflicted == 'true'
+        if: steps.sync.outputs.status == 'conflict'
         run: exit 1
 
-      - name: Create sync pull request
-        if: steps.exists.outputs.exists == 'false' && steps.merge.outputs.conflicted == 'false'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const tag = '${{ steps.resolve.outputs.tag }}';
-            const branch = '${{ steps.resolve.outputs.branch }}';
-            try {
-              await github.rest.pulls.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: `同步上游 Sub2API ${tag}`,
-                head: branch,
-                base: 'main',
-                body: `自动合并上游 Sub2API tag \`${tag}\` 到 Startwork 维护分支。合并后会由 Docker release workflow 构建并自动部署生产。`
-              });
-            } catch (error) {
-              if (error.status === 422) {
-                core.info('Pull request already exists or branch has no diff.');
-                return;
-              }
-              if (error.status === 403) {
-                core.warning('GitHub Actions cannot create pull requests in this repository. The sync branch was pushed successfully; create or merge the PR manually if needed.');
-                return;
-              }
-              throw error;
-            }
+      - name: Send Feishu notification
+        if: steps.sync.outputs.status == 'created' && env.FEISHU_WEBHOOK != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          msg=$(python3 -c 'import json, os; text = "\n".join(["✅ Sub2API 上游同步成功!", f"📦 Tag: {os.environ[\"TARGET_TAG\"]}", f"🌿 分支: {os.environ[\"TARGET_BRANCH\"]}", f"🔀 补丁来源: {os.environ.get(\"PATCH_SOURCE_BRANCH\") or \"none\"}", f"🧩 Patch 数量: {os.environ[\"PATCH_COMMIT_COUNT\"]}", f"📝 提交: {os.environ[\"BRANCH_HEAD\"][:7]}"]); print(json.dumps({"msg_type": "text", "content": {"text": text}}, ensure_ascii=False))')
+          curl -sS -X POST -H "Content-Type: application/json" -d "$msg" "$FEISHU_WEBHOOK"
+        env:
+          TARGET_TAG: ${{ steps.sync.outputs.target_tag }}
+          TARGET_BRANCH: ${{ steps.sync.outputs.target_branch }}
+          PATCH_SOURCE_BRANCH: ${{ steps.sync.outputs.patch_source_branch }}
+          PATCH_COMMIT_COUNT: ${{ steps.sync.outputs.patch_commit_count }}
+          BRANCH_HEAD: ${{ steps.sync.outputs.branch_head }}
 
-
-      - name: Dispatch Docker build for sync branch
-        if: steps.merge.outputs.conflicted != 'true'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const branch = '${{ steps.resolve.outputs.branch }}';
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'startwork-docker-release.yml',
-              ref: branch,
-              inputs: {
-                push_image: 'false'
-              }
-            });
-            core.info(`Dispatched Docker build for ${branch}.`);
+      - name: Build summary
+        shell: bash
+        run: |
+          {
+            echo "## Startwork upstream sync result"
+            echo
+            echo "- Status: \`${{ steps.sync.outputs.status }}\`"
+            echo "- Upstream tag: \`${{ steps.sync.outputs.target_tag }}\`"
+            echo "- Target branch: \`${{ steps.sync.outputs.target_branch }}\`"
+            echo "- Patch source: \`${{ steps.sync.outputs.patch_source_branch || 'none' }}\`"
+            echo "- Patch commit count: \`${{ steps.sync.outputs.patch_commit_count || '0' }}\`"
+            echo "- Branch head: \`${{ steps.sync.outputs.branch_head || 'n/a' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
