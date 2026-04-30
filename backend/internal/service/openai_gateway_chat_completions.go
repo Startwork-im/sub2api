@@ -84,6 +84,9 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 			writeChatCompletionsError(c, http.StatusBadRequest, "invalid_request_error", "Responses-shaped requests are not supported for this platform")
 			return nil, fmt.Errorf("responses-shaped requests are not supported for openai_chat")
 		}
+		if result, handled, err := s.tryForwardOpenAICompatibleChatCompletionsPassthrough(ctx, c, account, body, originalModel, billingModel, upstreamModel, clientStream, includeUsage, startTime); handled {
+			return result, err
+		}
 		return s.forwardChatCompletionsPassthrough(ctx, c, account, body, originalModel, billingModel, upstreamModel, clientStream, startTime)
 	}
 

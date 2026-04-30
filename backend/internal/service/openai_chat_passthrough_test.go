@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -51,11 +52,56 @@ func TestOpenAIGatewayService_OpenAIChatPassthrough_UsesChatCompletionsPath(t *t
 	result, err := svc.ForwardAsChatCompletions(c.Request.Context(), c, account, []byte(`{"model":"mimo-v2.5-pro","messages":[{"role":"user","content":"hi"}],"stream":false}`), "", "")
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, "https://api.xiaomimimo.com/v1/chat/completions", upstream.lastReq.URL.String())
-	require.Equal(t, "sk-mimo", upstream.lastReq.Header.Get("x-api-key"))
-	require.Empty(t, upstream.lastReq.Header.Get("authorization"))
+	require.Equal(t, "https://api.xiaomimimo.com/chat/completions", upstream.lastReq.URL.String())
+	require.Empty(t, upstream.lastReq.Header.Get("x-api-key"))
+	require.Equal(t, "Bearer sk-mimo", upstream.lastReq.Header.Get("authorization"))
 	require.Equal(t, "mimo-v2.5-pro", result.UpstreamModel)
 	require.Equal(t, 3, result.Usage.InputTokens)
 	require.Equal(t, 5, result.Usage.OutputTokens)
 	require.Contains(t, rec.Body.String(), "chatcmpl-1")
+}
+
+func TestOpenAIGatewayService_OpenAIChatPassthrough_XiaomiV1BaseURLUsesChatPlatformPath(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(`{
+				"id":"chatcmpl-mimo",
+				"object":"chat.completion",
+				"model":"mimo-v2.5-pro",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}],
+				"usage":{"prompt_tokens":3,"completion_tokens":5}
+			}`)),
+		},
+	}
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{},
+		httpUpstream: upstream,
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"mimo-v2.5-pro","messages":[{"role":"user","content":"hi"}],"stream":true}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	account := &Account{
+		ID:       11,
+		Platform: PlatformOpenAIChat,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":  "sk-mimo",
+			"base_url": "https://token-plan-cn.xiaomimimo.com/v1",
+		},
+	}
+
+	result, err := svc.ForwardAsChatCompletions(c.Request.Context(), c, account, body, "", "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "https://token-plan-cn.xiaomimimo.com/v1/chat/completions", upstream.lastReq.URL.String())
+	require.Empty(t, upstream.lastReq.Header.Get("x-api-key"))
+	require.Equal(t, "Bearer sk-mimo", upstream.lastReq.Header.Get("authorization"))
 }
