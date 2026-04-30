@@ -1054,11 +1054,11 @@ func (a *Account) GetOpenAISessionID() string {
 }
 
 func (a *Account) SupportsOpenAIImageCapability(capability OpenAIImagesCapability) bool {
-	if !a.IsOpenAI() {
-		return false
-	}
 	switch capability {
 	case OpenAIImagesCapabilityBasic, OpenAIImagesCapabilityNative:
+		if !a.IsOpenAI() {
+			return false
+		}
 		return a.Type == AccountTypeOAuth || a.Type == AccountTypeAPIKey
 	default:
 		return true
