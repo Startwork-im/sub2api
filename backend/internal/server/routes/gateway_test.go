@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newGatewayRoutesTestRouter() *gin.Engine {
+func newGatewayRoutesTestRouter(platform string) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 
@@ -28,7 +28,7 @@ func newGatewayRoutesTestRouter() *gin.Engine {
 			groupID := int64(1)
 			c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{
 				GroupID: &groupID,
-				Group:   &service.Group{Platform: service.PlatformOpenAI},
+				Group:   &service.Group{Platform: platform},
 			})
 			c.Next()
 		}),
@@ -43,7 +43,7 @@ func newGatewayRoutesTestRouter() *gin.Engine {
 }
 
 func TestGatewayRoutesOpenAIResponsesCompactPathIsRegistered(t *testing.T) {
-	router := newGatewayRoutesTestRouter()
+	router := newGatewayRoutesTestRouter(service.PlatformOpenAI)
 
 	for _, path := range []string{
 		"/v1/responses/compact",
@@ -61,7 +61,7 @@ func TestGatewayRoutesOpenAIResponsesCompactPathIsRegistered(t *testing.T) {
 }
 
 func TestGatewayRoutesOpenAIImagesPathsAreRegistered(t *testing.T) {
-	router := newGatewayRoutesTestRouter()
+	router := newGatewayRoutesTestRouter(service.PlatformOpenAI)
 
 	for _, path := range []string{
 		"/v1/images/generations",
@@ -76,4 +76,27 @@ func TestGatewayRoutesOpenAIImagesPathsAreRegistered(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should hit OpenAI images handler", path)
 	}
+}
+
+func TestGatewayRoutesOpenAIChatPlatformRejectsResponsesPath(t *testing.T) {
+	router := newGatewayRoutesTestRouter(service.PlatformOpenAIChat)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"mimo-v2.5-pro"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusNotFound, w.Code)
+	require.Contains(t, w.Body.String(), "Responses API is not supported for this platform")
+}
+
+func TestGatewayRoutesOpenAIChatPlatformRegistersChatCompletions(t *testing.T) {
+	router := newGatewayRoutesTestRouter(service.PlatformOpenAIChat)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"mimo-v2.5-pro","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+	require.NotEqual(t, http.StatusNotFound, w.Code)
 }
