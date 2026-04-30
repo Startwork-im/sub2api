@@ -965,6 +965,10 @@ func (a *Account) IsOpenAI() bool {
 	return a.Platform == PlatformOpenAI
 }
 
+func (a *Account) IsOpenAIChat() bool {
+	return a.Platform == PlatformOpenAIChat
+}
+
 func (a *Account) IsAnthropic() bool {
 	return a.Platform == PlatformAnthropic
 }
@@ -978,7 +982,7 @@ func (a *Account) IsOpenAIApiKey() bool {
 }
 
 func (a *Account) GetOpenAIBaseURL() string {
-	if !a.IsOpenAI() {
+	if !a.IsOpenAI() && !a.IsOpenAIChat() {
 		return ""
 	}
 	if a.Type == AccountTypeAPIKey {
@@ -1012,7 +1016,10 @@ func (a *Account) GetOpenAIIDToken() string {
 }
 
 func (a *Account) GetOpenAIApiKey() string {
-	if !a.IsOpenAIApiKey() {
+	if a.Type != AccountTypeAPIKey {
+		return ""
+	}
+	if !a.IsOpenAI() && !a.IsOpenAIChat() {
 		return ""
 	}
 	return a.GetCredential("api_key")

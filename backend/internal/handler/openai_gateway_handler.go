@@ -541,6 +541,11 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			"This group does not allow /v1/messages dispatch")
 		return
 	}
+	if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformOpenAIChat {
+		h.anthropicErrorResponse(c, http.StatusNotFound, "not_found_error",
+			"Messages API is not supported for this platform")
+		return
+	}
 
 	if !h.ensureResponsesDependencies(c, reqLog) {
 		return

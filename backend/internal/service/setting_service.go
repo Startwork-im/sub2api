@@ -2592,6 +2592,9 @@ func (s *SettingService) GetFallbackModel(ctx context.Context, platform string) 
 	case PlatformOpenAI:
 		key = SettingKeyFallbackModelOpenAI
 		defaultModel = "gpt-4o"
+	case PlatformOpenAIChat:
+		key = SettingKeyFallbackModelOpenAI
+		defaultModel = "gpt-4o"
 	case PlatformGemini:
 		key = SettingKeyFallbackModelGemini
 		defaultModel = "gemini-2.5-pro"
