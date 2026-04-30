@@ -3031,7 +3031,7 @@ const createForm = reactive({
   // 模型路由开关
   model_routing_enabled: false,
   // 支持的模型系列（仅 antigravity 平台）
-  supported_model_scopes: ["claude", "gemini_text", "gemini_image"] as string[],
+  supported_model_scopes: [] as string[],
   // MCP XML 协议注入开关（仅 antigravity 平台）
   mcp_xml_inject: true,
   // 从分组复制账号
@@ -3314,7 +3314,7 @@ const editForm = reactive({
   // 模型路由开关
   model_routing_enabled: false,
   // 支持的模型系列（仅 antigravity 平台）
-  supported_model_scopes: ["claude", "gemini_text", "gemini_image"] as string[],
+  supported_model_scopes: [] as string[],
   // MCP XML 协议注入开关（仅 antigravity 平台）
   mcp_xml_inject: true,
   // 从分组复制账号
@@ -3490,7 +3490,7 @@ const closeCreateModal = () => {
   resetMessagesDispatchFormState(createForm);
   createForm.require_oauth_only = false;
   createForm.require_privacy_set = false;
-  createForm.supported_model_scopes = ["claude", "gemini_text", "gemini_image"];
+  createForm.supported_model_scopes = [];
   createForm.mcp_xml_inject = true;
   createForm.copy_accounts_from_group_ids = [];
   createModelRoutingRules.value = [];
@@ -3548,6 +3548,8 @@ const handleCreateGroup = async () => {
             })
           : undefined,
     };
+    requestData.supported_model_scopes =
+      requestData.platform === "antigravity" ? requestData.supported_model_scopes : [];
     // v-model.number 清空输入框时产生 ""，转为 null 让后端设为无限制
     const emptyToNull = (v: any) => (v === "" ? null : v);
     requestData.daily_limit_usd = emptyToNull(requestData.daily_limit_usd);
@@ -3605,11 +3607,13 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.require_oauth_only = group.require_oauth_only ?? false;
   editForm.require_privacy_set = group.require_privacy_set ?? false;
   editForm.model_routing_enabled = group.model_routing_enabled || false;
-  editForm.supported_model_scopes = group.supported_model_scopes || [
-    "claude",
-    "gemini_text",
-    "gemini_image",
-  ];
+  editForm.supported_model_scopes = group.platform === "antigravity"
+    ? (group.supported_model_scopes || [
+        "claude",
+        "gemini_text",
+        "gemini_image",
+      ])
+    : (group.supported_model_scopes || []);
   editForm.mcp_xml_inject = group.mcp_xml_inject ?? true;
   editForm.copy_accounts_from_group_ids = []; // 复制账号字段每次编辑时重置为空
   editForm.rpm_limit = group.rpm_limit ?? 0;
@@ -3673,6 +3677,8 @@ const handleUpdateGroup = async () => {
             })
           : undefined,
     };
+    payload.supported_model_scopes =
+      payload.platform === "antigravity" ? payload.supported_model_scopes : [];
     // v-model.number 清空输入框时产生 ""，转为 null 让后端设为无限制
     const emptyToNull = (v: any) => (v === "" ? null : v);
     payload.daily_limit_usd = emptyToNull(payload.daily_limit_usd);

@@ -37,6 +37,8 @@
             :placeholder="
               account.platform === 'openai'
                 ? 'https://api.openai.com'
+                : account.platform === 'openai_chat'
+                  ? 'https://api.example.com/v1'
                 : account.platform === 'gemini'
                   ? 'https://generativelanguage.googleapis.com'
                   : account.platform === 'antigravity'
@@ -59,6 +61,8 @@
             :placeholder="
               account.platform === 'openai'
                 ? 'sk-proj-...'
+                : account.platform === 'openai_chat'
+                  ? 'sk-...'
                 : account.platform === 'gemini'
                   ? 'AIza...'
                   : account.platform === 'antigravity'
@@ -1956,6 +1960,7 @@ const authStore = useAuthStore()
 const baseUrlHint = computed(() => {
   if (!props.account) return t('admin.accounts.baseUrlHint')
   if (props.account.platform === 'openai') return t('admin.accounts.openai.baseUrlHint')
+  if (props.account.platform === 'openai_chat') return 'OpenAI Chat 会在你填写的 Base URL 后追加 /chat/completions；如果供应商要求 /v1，请在 Base URL 中自行包含 /v1。'
   if (props.account.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
   return t('admin.accounts.baseUrlHint')
 })
@@ -2163,6 +2168,7 @@ const tempUnschedPresets = computed(() => [
 // Computed: default base URL based on platform
 const defaultBaseUrl = computed(() => {
   if (props.account?.platform === 'openai') return 'https://api.openai.com'
+  if (props.account?.platform === 'openai_chat') return ''
   if (props.account?.platform === 'gemini') return 'https://generativelanguage.googleapis.com'
   return 'https://api.anthropic.com'
 })
@@ -2373,6 +2379,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     const platformDefaultUrl =
       newAccount.platform === 'openai'
         ? 'https://api.openai.com'
+        : newAccount.platform === 'openai_chat'
+          ? ''
         : newAccount.platform === 'gemini'
           ? 'https://generativelanguage.googleapis.com'
           : 'https://api.anthropic.com'
@@ -2471,6 +2479,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     const platformDefaultUrl =
       newAccount.platform === 'openai'
         ? 'https://api.openai.com'
+        : newAccount.platform === 'openai_chat'
+          ? ''
         : newAccount.platform === 'gemini'
           ? 'https://generativelanguage.googleapis.com'
           : 'https://api.anthropic.com'

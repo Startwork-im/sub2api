@@ -2005,6 +2005,7 @@ export default {
         all: '全部平台',
         anthropic: 'Anthropic',
         openai: 'OpenAI',
+        openai_chat: 'OpenAI Chat',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
       },
@@ -2758,6 +2759,7 @@ export default {
       platforms: {
         claude: 'Claude',
         openai: 'OpenAI',
+        openai_chat: 'OpenAI Chat',
         anthropic: 'Anthropic',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
