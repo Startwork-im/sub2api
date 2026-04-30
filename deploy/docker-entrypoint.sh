@@ -20,4 +20,9 @@ if [ "${1#-}" != "$1" ]; then
     set -- /app/sub2api "$@"
 fi
 
+if [ "$1" = "/app/sub2api" ] && [ "$#" -eq 1 ] && [ "${SUB2API_SKIP_SCHEMA_MIGRATION:-}" != "true" ]; then
+    echo "Running schema migrations..."
+    /app/sub2api --migrate-only
+fi
+
 exec "$@"

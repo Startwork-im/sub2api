@@ -63,7 +63,7 @@ func (s *OpenAIGatewayService) tryForwardOpenAICompatibleChatCompletionsPassthro
 }
 
 func shouldPassthroughOpenAICompatibleChatCompletions(account *Account) bool {
-	if account == nil || account.Type != AccountTypeAPIKey {
+	if account == nil || account.Platform != PlatformOpenAIChat || account.Type != AccountTypeAPIKey {
 		return false
 	}
 	return strings.TrimSpace(account.GetCredential("base_url")) != ""
@@ -158,6 +158,9 @@ func (s *OpenAIGatewayService) buildOpenAICompatibleChatCompletionsPassthroughRe
 		return nil, err
 	}
 	targetURL := buildOpenAIChatCompletionsURL(validatedURL)
+	if account.Platform == PlatformOpenAIChat {
+		targetURL = buildOpenAIChatPlatformCompletionsURL(validatedURL)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
 	if err != nil {
@@ -301,6 +304,14 @@ func buildOpenAIChatCompletionsURL(base string) string {
 		return normalized + "/chat/completions"
 	}
 	return normalized + "/v1/chat/completions"
+}
+
+func buildOpenAIChatPlatformCompletionsURL(base string) string {
+	normalized := strings.TrimRight(strings.TrimSpace(base), "/")
+	if strings.HasSuffix(normalized, "/chat/completions") {
+		return normalized
+	}
+	return normalized + "/chat/completions"
 }
 
 func openAICompatibleChatUsageFromBody(body []byte) OpenAIUsage {
