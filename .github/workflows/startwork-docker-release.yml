@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - 'upstream-v*'
       - 'sync/upstream-*'
   pull_request:
     branches:
@@ -54,6 +55,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          branch_name="${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}"
+          branch_tag="${branch_name//\//-}"
           short_sha="${GITHUB_SHA::7}"
           tag="$REQUESTED_IMAGE_TAG"
           if [ -z "$tag" ]; then
@@ -66,7 +69,17 @@ jobs:
           fi
           echo "image_tag=$tag" >> "$GITHUB_OUTPUT"
           echo "image_ref=${IMAGE_NAME}:$tag" >> "$GITHUB_OUTPUT"
+          echo "branch_tag=$branch_tag" >> "$GITHUB_OUTPUT"
           echo "labels=$labels" >> "$GITHUB_OUTPUT"
+          {
+            echo 'push_tags<<EOF'
+            echo "${IMAGE_NAME}:$tag"
+            echo "${IMAGE_NAME}:$branch_tag"
+            if [ "$branch_name" = "main" ]; then
+              echo "${IMAGE_NAME}:latest"
+            fi
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Decide push mode
         id: push_decision
@@ -75,7 +88,12 @@ jobs:
           set -euo pipefail
           can_push=false
           reason="not_main_or_not_requested"
-          if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+          branch_name="${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}"
+          release_branch=false
+          if [ "${GITHUB_REF}" = "refs/heads/main" ] || [[ "$branch_name" == upstream-v* ]]; then
+            release_branch=true
+          fi
+          if [ "$release_branch" = true ]; then
             if [ "${GITHUB_EVENT_NAME}" = "push" ] || [ "$REQUESTED_PUSH_IMAGE" = "true" ]; then
               if [ -n "$DOCKERHUB_USERNAME_VALUE" ] && [ -n "$DOCKERHUB_TOKEN_VALUE" ]; then
                 can_push=true
@@ -99,7 +117,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: false
-          tags: ${{ steps.meta.outputs.image_ref }}
+          tags: ${{ steps.meta.outputs.push_tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Login to Docker Hub
@@ -116,9 +134,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: |
-            ${{ steps.meta.outputs.image_ref }}
-            ${{ env.IMAGE_NAME }}:latest
+          tags: ${{ steps.meta.outputs.push_tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Mark image pushed
@@ -138,8 +154,9 @@ jobs:
             echo "- Image ref: \`${{ steps.meta.outputs.image_ref }}\`"
             echo "- Branch: \`${GITHUB_REF}\`"
             echo "- Event: \`${GITHUB_EVENT_NAME}\`"
+            echo "- Branch tag: \`${{ steps.meta.outputs.branch_tag }}\`"
             echo "- Docker push enabled: \`${{ steps.push_decision.outputs.can_push }}\`"
             if [ "${{ steps.push_decision.outputs.can_push }}" != "true" ]; then
-              echo "- Docker push skipped: missing Docker Hub secrets, non-main branch, PR, or push not requested."
+              echo "- Docker push skipped: missing Docker Hub secrets, non-release branch, PR, or push not requested."
             fi
           } >> "$GITHUB_STEP_SUMMARY"

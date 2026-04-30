@@ -7,14 +7,23 @@ This fork is the Startwork-maintained Sub2API distribution used by Startwork pro
 - Fork repository: `startwork-im/sub2api`
 - Upstream repository: official Sub2API repository, currently `Wei-Shaw/sub2api`
 - Docker image: `startwork/sub2api`
-- Production deployment: fully automatic after the image workflow succeeds on `main`
+- Canonical automation entrypoints:
+  - `.github/workflows/startwork-upstream-sync.yml`
+  - `.github/workflows/startwork-docker-release.yml`
+- Automatic update semantics:
+  - the upstream sync workflow tracks the newest upstream release tag and updates the canonical `upstream-v<tag>` runtime branch
+  - pushes to the latest canonical upstream runtime branch auto-trigger the Docker build workflow
+  - later commits pushed onto that runtime branch auto-trigger the same build path again
 - Staging environment: not available yet
 
 ## Branch Contract
 
 - `main` is the Startwork-maintained product branch.
-- `sync/upstream-<tag>` branches are created by the upstream tag sync workflow.
+- `upstream-v<tag>` is the canonical maintained runtime branch namespace for synced upstream releases.
+- Existing `sync/upstream-<tag>` branches are legacy migration inputs only and must not be created for new tags.
 - Startwork patches live on `main` and must survive upstream tag merges.
+- The upstream sync workflow must create or update the latest canonical `upstream-v<tag>` branch from the newest available upstream tag.
+- The Docker build workflow must auto-run for new canonical upstream branches and for new commits pushed onto them.
 - Merge conflicts, test failures, build failures, health check failures, or smoke test failures must block deployment or trigger rollback.
 
 ## Product Boundary

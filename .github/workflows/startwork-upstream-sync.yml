@@ -33,43 +33,61 @@ jobs:
           git config user.name 'startwork-sub2api-sync[bot]'
           git config user.email 'startwork-sub2api-sync@users.noreply.github.com'
 
-      - name: Resolve upstream tag
+      - name: Resolve upstream tag and target branch
         id: resolve
         shell: bash
         run: |
           set -euo pipefail
           git remote add upstream https://github.com/Wei-Shaw/sub2api.git 2>/dev/null || git remote set-url upstream https://github.com/Wei-Shaw/sub2api.git
           git fetch upstream --tags --force
+          git fetch origin --prune
           tag="$REQUESTED_UPSTREAM_TAG"
           if [ -z "$tag" ]; then
-            tag=$(git tag -l 'v*' | sort -V | tail -n 1)
+            tag=$(git tag -l 'v*' | sort -V | tail -n 1 || true)
           fi
           if [ -z "$tag" ]; then
             echo 'No upstream tag found' >&2
             exit 1
           fi
-          branch="sync/upstream-${tag}"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "branch=$branch" >> "$GITHUB_OUTPUT"
 
-      - name: Skip when sync branch already exists
-        id: exists
-        shell: bash
-        run: |
-          set -euo pipefail
-          if git ls-remote --exit-code --heads origin '${{ steps.resolve.outputs.branch }}' >/dev/null 2>&1; then
-            echo 'exists=true' >> "$GITHUB_OUTPUT"
+          branch="upstream-${tag}"
+          legacy_branch="sync/upstream-${tag}"
+          version="${tag#v}"
+          base_branch="origin/main"
+
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            base_branch="origin/${branch}"
+            target_exists=true
           else
-            echo 'exists=false' >> "$GITHUB_OUTPUT"
+            target_exists=false
+            if git ls-remote --exit-code --heads origin "$legacy_branch" >/dev/null 2>&1; then
+              base_branch="origin/${legacy_branch}"
+            else
+              while IFS= read -r existing_branch; do
+                [ -n "$existing_branch" ] || continue
+                existing_version="${existing_branch#origin/upstream-v}"
+                if [ "$existing_version" = "$version" ]; then
+                  continue
+                fi
+                if [ "$(printf '%s\n%s\n' "$existing_version" "$version" | sort -V | tail -n 1)" = "$version" ]; then
+                  base_branch="$existing_branch"
+                fi
+              done < <(git for-each-ref --sort=version:refname --format='%(refname:short)' 'refs/remotes/origin/upstream-v*')
+            fi
           fi
 
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "base_branch=$base_branch" >> "$GITHUB_OUTPUT"
+          echo "target_exists=$target_exists" >> "$GITHUB_OUTPUT"
+
       - name: Merge upstream tag
-        if: steps.exists.outputs.exists == 'false'
         id: merge
         shell: bash
         run: |
           set +e
-          git checkout -B '${{ steps.resolve.outputs.branch }}' origin/main
+          git checkout -B '${{ steps.resolve.outputs.branch }}' '${{ steps.resolve.outputs.base_branch }}'
+          before_sha=$(git rev-parse HEAD)
           git merge --no-edit '${{ steps.resolve.outputs.tag }}'
           rc=$?
           if [ $rc -ne 0 ]; then
@@ -78,10 +96,18 @@ jobs:
             exit 0
           fi
           echo 'conflicted=false' >> "$GITHUB_OUTPUT"
-          git push origin '${{ steps.resolve.outputs.branch }}'
+          after_sha=$(git rev-parse HEAD)
+          push_required=false
+          if [ '${{ steps.resolve.outputs.target_exists }}' != 'true' ] || [ "$before_sha" != "$after_sha" ]; then
+            push_required=true
+            git push origin '${{ steps.resolve.outputs.branch }}'
+          fi
+          echo "push_required=$push_required" >> "$GITHUB_OUTPUT"
+          echo "before_sha=$before_sha" >> "$GITHUB_OUTPUT"
+          echo "after_sha=$after_sha" >> "$GITHUB_OUTPUT"
 
       - name: Create conflict issue
-        if: steps.exists.outputs.exists == 'false' && steps.merge.outputs.conflicted == 'true'
+        if: steps.merge.outputs.conflicted == 'true'
         uses: actions/github-script@v7
         with:
           script: |
@@ -110,11 +136,11 @@ jobs:
             });
 
       - name: Fail on conflict
-        if: steps.exists.outputs.exists == 'false' && steps.merge.outputs.conflicted == 'true'
+        if: steps.merge.outputs.conflicted == 'true'
         run: exit 1
 
       - name: Create sync pull request
-        if: steps.exists.outputs.exists == 'false' && steps.merge.outputs.conflicted == 'false'
+        if: steps.resolve.outputs.target_exists != 'true' && steps.merge.outputs.conflicted == 'false'
         uses: actions/github-script@v7
         with:
           script: |
@@ -127,7 +153,7 @@ jobs:
                 title: `同步上游 Sub2API ${tag}`,
                 head: branch,
                 base: 'main',
-                body: `自动合并上游 Sub2API tag \`${tag}\` 到 Startwork 维护分支。合并后会由 Docker release workflow 构建并自动部署生产。`
+                body: `自动合并上游 Sub2API tag \`${tag}\` 到 Startwork 维护分支。目标运行时分支 \`${branch}\` 会在新提交时继续自动触发构建。`
               });
             } catch (error) {
               if (error.status === 422) {
@@ -135,26 +161,26 @@ jobs:
                 return;
               }
               if (error.status === 403) {
-                core.warning('GitHub Actions cannot create pull requests in this repository. The sync branch was pushed successfully; create or merge the PR manually if needed.');
+                core.warning(`GitHub Actions cannot create pull requests in this repository. The target branch ${branch} was pushed successfully; create or merge the PR manually if needed.`);
                 return;
               }
               throw error;
             }
 
-
-      - name: Dispatch Docker build for sync branch
-        if: steps.merge.outputs.conflicted != 'true'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const branch = '${{ steps.resolve.outputs.branch }}';
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'startwork-docker-release.yml',
-              ref: branch,
-              inputs: {
-                push_image: 'false'
-              }
-            });
-            core.info(`Dispatched Docker build for ${branch}.`);
+      - name: Sync summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Startwork upstream sync'
+            echo
+            echo "- Upstream tag: \`${{ steps.resolve.outputs.tag }}\`"
+            echo "- Target branch: \`${{ steps.resolve.outputs.branch }}\`"
+            echo "- Base branch: \`${{ steps.resolve.outputs.base_branch }}\`"
+            echo "- Target existed: \`${{ steps.resolve.outputs.target_exists }}\`"
+            echo "- Merge conflicted: \`${{ steps.merge.outputs.conflicted || 'false' }}\`"
+            echo "- Branch pushed: \`${{ steps.merge.outputs.push_required || 'false' }}\`"
+            echo "- Auto build path: \`push trigger on startwork-docker-release.yml\`"
+            echo "- Before: \`${{ steps.merge.outputs.before_sha || 'n/a' }}\`"
+            echo "- After: \`${{ steps.merge.outputs.after_sha || 'n/a' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
