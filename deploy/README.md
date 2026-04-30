@@ -16,6 +16,7 @@ This directory contains files for deploying Sub2API on Linux servers.
 | `docker-compose.yml` | Docker Compose configuration (named volumes) |
 | `docker-compose.local.yml` | Docker Compose configuration (local directories, easy migration) |
 | `docker-deploy.sh` | **One-click Docker deployment script (recommended)** |
+| `fork-auto-update.sh` | Poll the maintained fork latest tag branch and rebuild standalone deployment |
 | `.env.example` | Docker environment variables template |
 | `DOCKER.md` | Docker Hub documentation |
 | `install.sh` | One-click binary installation script |
@@ -181,6 +182,32 @@ docker compose -f docker-compose.local.yml up -d
 docker compose -f docker-compose.local.yml down
 rm -rf data/ postgres_data/ redis_data/
 ```
+
+### Startwork Fork Auto Update
+
+If this server should track the maintained Startwork fork instead of Docker Hub tags:
+
+```bash
+cd /path/to/sub2api/deploy
+cp .env.example .env
+# set FORK_AUTO_UPDATE_ENABLED=true
+# optionally set FORK_AUTO_UPDATE_LARK_WEBHOOK
+chmod +x fork-auto-update.sh
+./fork-auto-update.sh --force
+```
+
+Recommended cron:
+
+```bash
+*/5 * * * * /bin/bash /path/to/sub2api/deploy/fork-auto-update.sh >> /path/to/sub2api/deploy/logs/cron.log 2>&1
+```
+
+The script will:
+- fetch the configured remote
+- pick the latest `${FORK_AUTO_UPDATE_BRANCH_PREFIX}*` branch
+- checkout/reset the repo to that branch
+- build `${FORK_AUTO_UPDATE_IMAGE}`
+- recreate the `sub2api` container and verify `/health`
 
 For **named volumes version** (docker-compose.yml):
 
