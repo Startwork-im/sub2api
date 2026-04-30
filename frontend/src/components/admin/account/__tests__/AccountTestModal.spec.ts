@@ -134,7 +134,8 @@ describe('AccountTestModal', () => {
     await flushPromises()
 
     expect(global.fetch).toHaveBeenCalledTimes(1)
-    const [, request] = (global.fetch as any).mock.calls[0]
+    const [url, request] = (global.fetch as any).mock.calls[0]
+    expect(url).toBe('/api/v1/admin/accounts/42/test')
     expect(JSON.parse(request.body)).toEqual({
       model_id: 'gemini-3.1-flash-image',
       prompt: 'draw a tiny orange cat astronaut'
