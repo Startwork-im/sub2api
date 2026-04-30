@@ -28,6 +28,39 @@ ensure_remote() {
   git remote add "$UPSTREAM_REMOTE_NAME" "$UPSTREAM_REMOTE_URL" 2>/dev/null || git remote set-url "$UPSTREAM_REMOTE_NAME" "$UPSTREAM_REMOTE_URL"
 }
 
+canonical_branch_for_tag() {
+  printf 'upstream-%s\n' "$1"
+}
+
+legacy_branch_for_tag() {
+  printf 'sync/upstream-%s\n' "$1"
+}
+
+normalize_branch_tag() {
+  local branch="$1"
+  branch="${branch#sync/upstream-}"
+  branch="${branch#upstream-}"
+  printf '%s\n' "$branch"
+}
+
+branch_priority() {
+  case "$1" in
+    upstream-v*)
+      printf '1\n'
+      ;;
+    sync/upstream-v*)
+      printf '0\n'
+      ;;
+    *)
+      printf -- '-1\n'
+      ;;
+  esac
+}
+
+branch_exists_remote() {
+  git show-ref --verify --quiet "refs/remotes/${ORIGIN_REMOTE_NAME}/$1"
+}
+
 resolve_target_tag() {
   local tag="$REQUESTED_UPSTREAM_TAG"
   if [ -z "$tag" ]; then
@@ -41,19 +74,27 @@ resolve_target_tag() {
 }
 
 list_maintained_branches() {
-  git for-each-ref --format='%(refname:short)' "refs/remotes/${ORIGIN_REMOTE_NAME}/upstream-v*" \
-    | sed "s#^${ORIGIN_REMOTE_NAME}/##" \
-    | sort -V
+  {
+    git for-each-ref --format='%(refname:short)' "refs/remotes/${ORIGIN_REMOTE_NAME}/upstream-v*"
+    git for-each-ref --format='%(refname:short)' "refs/remotes/${ORIGIN_REMOTE_NAME}/sync/upstream-v*"
+  } | sed "s#^${ORIGIN_REMOTE_NAME}/##"
 }
 
 select_patch_source_branch() {
   local target_tag="$1"
   local branch=""
+  local branch_tag=""
   while IFS= read -r candidate; do
     [ -z "$candidate" ] && continue
-    local candidate_tag="${candidate#upstream-}"
+    local candidate_tag
+    candidate_tag="$(normalize_branch_tag "$candidate")"
     if version_lt "$candidate_tag" "$target_tag"; then
-      branch="$candidate"
+      if [ -z "$branch" ] \
+        || version_lt "$branch_tag" "$candidate_tag" \
+        || { [ "$branch_tag" = "$candidate_tag" ] && [ "$(branch_priority "$candidate")" -gt "$(branch_priority "$branch")" ]; }; then
+        branch="$candidate"
+        branch_tag="$candidate_tag"
+      fi
     fi
   done < <(list_maintained_branches)
   printf '%s\n' "$branch"
@@ -71,17 +112,19 @@ main() {
   git fetch "$ORIGIN_REMOTE_NAME" --prune
   git fetch "$UPSTREAM_REMOTE_NAME" --tags --force
 
-  local target_tag target_branch patch_source_branch branch_head patch_source_tag patch_commits patch_commit_count
+  local target_tag target_branch legacy_target_branch patch_source_branch branch_head patch_source_tag patch_commits patch_commit_count
   target_tag="$(resolve_target_tag)"
-  target_branch="upstream-${target_tag}"
+  target_branch="$(canonical_branch_for_tag "$target_tag")"
+  legacy_target_branch="$(legacy_branch_for_tag "$target_tag")"
   patch_source_branch="$(select_patch_source_branch "$target_tag")"
 
   append_output target_tag "$target_tag"
   append_output target_branch "$target_branch"
+  append_output legacy_target_branch "$legacy_target_branch"
   append_output patch_source_branch "$patch_source_branch"
   append_output status "pending"
 
-  if git show-ref --verify --quiet "refs/remotes/${ORIGIN_REMOTE_NAME}/${target_branch}"; then
+  if branch_exists_remote "$target_branch"; then
     branch_head="$(git rev-parse "refs/remotes/${ORIGIN_REMOTE_NAME}/${target_branch}")"
     append_output status "noop_existing_branch"
     append_output branch_head "$branch_head"
@@ -96,11 +139,32 @@ main() {
     exit 0
   fi
 
+  if branch_exists_remote "$legacy_target_branch"; then
+    git checkout -B "$target_branch" "refs/remotes/${ORIGIN_REMOTE_NAME}/${legacy_target_branch}"
+    branch_head="$(git rev-parse HEAD)"
+    append_output status "migrated_legacy_branch"
+    append_output branch_head "$branch_head"
+    append_output patch_commit_count "0"
+    if [ "$DRY_RUN" != "true" ]; then
+      git push "$ORIGIN_REMOTE_NAME" "$target_branch"
+    fi
+    {
+      echo "## Startwork upstream sync"
+      echo
+      echo "- Result: canonical branch created from legacy branch"
+      echo "- Upstream tag: \`${target_tag}\`"
+      echo "- Canonical branch: \`${target_branch}\`"
+      echo "- Legacy branch: \`${legacy_target_branch}\`"
+      echo "- Branch head: \`${branch_head}\`"
+    } >>"$GITHUB_STEP_SUMMARY"
+    exit 0
+  fi
+
   git checkout -B "$target_branch" "refs/tags/${target_tag}"
 
   patch_commit_count=0
   if [ -n "$patch_source_branch" ]; then
-    patch_source_tag="${patch_source_branch#upstream-}"
+    patch_source_tag="$(normalize_branch_tag "$patch_source_branch")"
     mapfile -t patch_commits < <(git rev-list --reverse "refs/tags/${patch_source_tag}..refs/remotes/${ORIGIN_REMOTE_NAME}/${patch_source_branch}")
     patch_commit_count="${#patch_commits[@]}"
     for commit in "${patch_commits[@]}"; do

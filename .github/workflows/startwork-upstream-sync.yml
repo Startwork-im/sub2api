@@ -75,15 +75,17 @@ jobs:
         run: exit 1
 
       - name: Send Feishu notification
-        if: steps.sync.outputs.status == 'created' && env.FEISHU_WEBHOOK != ''
+        if: (steps.sync.outputs.status == 'created' || steps.sync.outputs.status == 'migrated_legacy_branch') && env.FEISHU_WEBHOOK != ''
         shell: bash
         run: |
           set -euo pipefail
-          msg=$(python3 -c 'import json, os; text = "\n".join(["✅ Sub2API 上游同步成功!", f"📦 Tag: {os.environ[\"TARGET_TAG\"]}", f"🌿 分支: {os.environ[\"TARGET_BRANCH\"]}", f"🔀 补丁来源: {os.environ.get(\"PATCH_SOURCE_BRANCH\") or \"none\"}", f"🧩 Patch 数量: {os.environ[\"PATCH_COMMIT_COUNT\"]}", f"📝 提交: {os.environ[\"BRANCH_HEAD\"][:7]}"]); print(json.dumps({"msg_type": "text", "content": {"text": text}}, ensure_ascii=False))')
+          msg=$(python3 -c 'import json, os; lines = ["✅ Sub2API 上游同步成功!", f"📦 Tag: {os.environ[\"TARGET_TAG\"]}", f"🌿 分支: {os.environ[\"TARGET_BRANCH\"]}", f"🔀 补丁来源: {os.environ.get(\"PATCH_SOURCE_BRANCH\") or \"none\"}", f"🧩 Patch 数量: {os.environ[\"PATCH_COMMIT_COUNT\"]}", f"📝 提交: {os.environ[\"BRANCH_HEAD\"][:7]}"]; legacy = os.environ.get(\"LEGACY_TARGET_BRANCH\"); status = os.environ.get(\"SYNC_STATUS\"); lines.append(f\"📌 状态: {status}\"); lines.append(f\"🧹 旧分支迁移: {legacy}\" if status == \"migrated_legacy_branch\" and legacy else \"\"); text = \"\\n\".join([line for line in lines if line]); print(json.dumps({\"msg_type\": \"text\", \"content\": {\"text\": text}}, ensure_ascii=False))')
           curl -sS -X POST -H "Content-Type: application/json" -d "$msg" "$FEISHU_WEBHOOK"
         env:
+          SYNC_STATUS: ${{ steps.sync.outputs.status }}
           TARGET_TAG: ${{ steps.sync.outputs.target_tag }}
           TARGET_BRANCH: ${{ steps.sync.outputs.target_branch }}
+          LEGACY_TARGET_BRANCH: ${{ steps.sync.outputs.legacy_target_branch }}
           PATCH_SOURCE_BRANCH: ${{ steps.sync.outputs.patch_source_branch }}
           PATCH_COMMIT_COUNT: ${{ steps.sync.outputs.patch_commit_count }}
           BRANCH_HEAD: ${{ steps.sync.outputs.branch_head }}

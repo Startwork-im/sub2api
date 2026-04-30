@@ -7,14 +7,15 @@ This fork is the Startwork-maintained Sub2API distribution used by Startwork pro
 - Fork repository: `startwork-im/sub2api`
 - Upstream repository: official Sub2API repository, currently `Wei-Shaw/sub2api`
 - Docker image: `startwork/sub2api`
-- Production deployment: fully automatic after the image workflow succeeds on `main`
+- Production deployment: driven by Startwork production `deployment/auto_update.sh`, which watches the latest maintained upstream patch branch and rebuilds the standalone Sub2API runtime
 - Staging environment: not available yet
 
 ## Branch Contract
 
-- `main` is the Startwork-maintained product branch.
-- `sync/upstream-<tag>` branches are created by the upstream tag sync workflow.
-- Startwork patches live on `main` and must survive upstream tag merges.
+- `upstream-v<tag>` is the only canonical upstream sync branch namespace.
+- `sync/upstream-v<tag>` is legacy migration input only and must not be created for new tags.
+- Startwork patches live on the latest maintained `upstream-v<tag>` branch and must survive forward-porting onto newer upstream tags.
+- The upstream tag sync workflow creates new canonical `upstream-v<tag>` branches from official tags and cherry-picks Startwork-owned commits from the latest maintained older branch.
 - Merge conflicts, test failures, build failures, health check failures, or smoke test failures must block deployment or trigger rollback.
 
 ## Product Boundary
@@ -41,7 +42,7 @@ Known provider requirements:
 
 ## Production Rollout Guardrails
 
-The Docker release workflow deploys by SSH to the production host and recreates only the Sub2API service.
+Startwork production deploy remains the single rollout entrypoint.
 It must preserve the existing Postgres, Redis, volumes, Docker network, and Startwork backend URL contract `http://sub2api:8080`.
 
 Rollback requirement:
