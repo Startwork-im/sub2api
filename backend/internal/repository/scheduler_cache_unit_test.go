@@ -71,3 +71,21 @@ func TestBuildSchedulerMetadataAccount_KeepsSlimGroupMembership(t *testing.T) {
 	require.Equal(t, int64(11), got.AccountGroups[1].GroupID)
 	require.Nil(t, got.Groups)
 }
+
+func TestBuildSchedulerMetadataAccount_KeepsOpenAIChatBaseURL(t *testing.T) {
+	account := service.Account{
+		ID:       33,
+		Platform: service.PlatformOpenAIChat,
+		Type:     service.AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":      "sk-test",
+			"base_url":     "https://api.nextrouter.io/v1",
+			"model_mapping": map[string]string{"mimo-v2.5-pro": "mimo-v2.5-pro"},
+		},
+	}
+
+	got := buildSchedulerMetadataAccount(account)
+
+	require.Equal(t, "https://api.nextrouter.io/v1", got.Credentials["base_url"])
+	require.Equal(t, "sk-test", got.Credentials["api_key"])
+}
