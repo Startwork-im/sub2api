@@ -160,7 +160,7 @@ func (s *GatewayService) ForwardAsResponses(
 				AccountID:          account.ID,
 				AccountName:        account.Name,
 				UpstreamStatusCode: resp.StatusCode,
-				UpstreamRequestID:  resp.Header.Get("x-request-id"),
+				UpstreamRequestID:  requestIDFromHeader(resp.Header),
 				Kind:               "failover",
 				Message:            upstreamMsg,
 			})
@@ -233,7 +233,7 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 	reasoningEffort *string,
 	startTime time.Time,
 ) (*ForwardResult, error) {
-	requestID := resp.Header.Get("x-request-id")
+	requestID := requestIDFromHeader(resp.Header)
 
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
@@ -373,7 +373,7 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 	reasoningEffort *string,
 	startTime time.Time,
 ) (*ForwardResult, error) {
-	requestID := resp.Header.Get("x-request-id")
+	requestID := requestIDFromHeader(resp.Header)
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
