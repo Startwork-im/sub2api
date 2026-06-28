@@ -203,6 +203,7 @@ func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 	if requestID != "" {
 		c.Header("x-request-id", requestID)
 	}
+	setUsageRequestIDHeaderFromGin(c, requestID)
 
 	reasoningEffort := extractCCReasoningEffortFromBody(originalChatBody)
 	// 国产模型默认 effort 补充（本路径上游是 Gemini，不会命中 passback-required）。
@@ -500,6 +501,7 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	}
+	setUsageRequestIDHeaderFromGin(c, firstNonEmpty(resp.Header.Get("x-request-id"), resp.Header.Get("x-goog-request-id")))
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")

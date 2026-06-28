@@ -171,6 +171,7 @@ func writeOpenAIEmbeddingsUpstreamResponse(c *gin.Context, resp *http.Response, 
 	if resp.Header != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, filter)
 	}
+	setUsageRequestIDHeaderFromGin(c, firstNonEmptyString(resp.Header.Get("x-request-id"), resp.Header.Get("request-id")))
 	if ct := resp.Header.Get("Content-Type"); ct != "" {
 		c.Writer.Header().Set("Content-Type", ct)
 	} else {
