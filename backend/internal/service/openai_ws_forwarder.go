@@ -2416,6 +2416,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 
 	return &OpenAIForwardResult{
 		RequestID:        responseID,
+		UsageRequestID:   resolveUsageBillingRequestID(context.Background(), ""),
 		Usage:            *usage,
 		Model:            originalModel,
 		UpstreamModel:    mappedModel,
@@ -3337,6 +3338,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				imageCount := imageCounter.Count()
 				result := &OpenAIForwardResult{
 					RequestID:       responseID,
+					UsageRequestID:  resolveUsageBillingRequestID(context.Background(), ""),
 					Usage:           usage,
 					Model:           originalModel,
 					UpstreamModel:   mappedModel,
