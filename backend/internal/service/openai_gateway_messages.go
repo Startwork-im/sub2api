@@ -360,10 +360,10 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	var result *OpenAIForwardResult
 	var handleErr error
 	if clientStream {
-		result, handleErr = s.handleAnthropicStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime)
+		result, handleErr = s.handleAnthropicStreamingResponse(ctx, resp, c, account, originalModel, billingModel, upstreamModel, startTime)
 	} else {
 		// Client wants JSON: buffer the streaming response and assemble a JSON reply.
-		result, handleErr = s.handleAnthropicBufferedStreamingResponse(resp, c, originalModel, billingModel, upstreamModel, startTime)
+		result, handleErr = s.handleAnthropicBufferedStreamingResponse(ctx, resp, c, originalModel, billingModel, upstreamModel, startTime)
 	}
 
 	// cyber_policy：标记已设、error 已按 Anthropic 格式发给客户端。丢弃 result、返回哨兵，
@@ -434,6 +434,7 @@ func (s *OpenAIGatewayService) handleAnthropicErrorResponse(
 // This is used when the client requested stream=false but the upstream is always
 // streaming.
 func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
+	ctx context.Context,
 	resp *http.Response,
 	c *gin.Context,
 	originalModel string,
@@ -484,18 +485,19 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	}
-	setUsageRequestIDHeaderFromGin(c, requestID)
+	usageRequestID := setUsageRequestIDHeader(ctx, c.Writer.Header(), requestID)
 	c.JSON(http.StatusOK, anthropicResp)
 
 	return &OpenAIForwardResult{
-		RequestID:     requestID,
-		ResponseID:    finalResponse.ID,
-		Usage:         usage,
-		Model:         originalModel,
-		BillingModel:  billingModel,
-		UpstreamModel: upstreamModel,
-		Stream:        false,
-		Duration:      time.Since(startTime),
+		RequestID:      requestID,
+		UsageRequestID: usageRequestID,
+		ResponseID:     finalResponse.ID,
+		Usage:          usage,
+		Model:          originalModel,
+		BillingModel:   billingModel,
+		UpstreamModel:  upstreamModel,
+		Stream:         false,
+		Duration:       time.Since(startTime),
 	}, nil
 }
 
@@ -700,6 +702,7 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 // pattern to send Anthropic ping events during periods of upstream silence,
 // preventing proxy/client timeout disconnections.
 func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
+	ctx context.Context,
 	resp *http.Response,
 	c *gin.Context,
 	account *Account,
@@ -709,6 +712,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
+	usageRequestID := resolveUsageBillingRequestID(ctx, requestID)
 
 	headersWritten := false
 	writeStreamHeaders := func() {
@@ -719,7 +723,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		if s.responseHeaderFilter != nil {
 			responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 		}
-		setUsageRequestIDHeaderFromGin(c, requestID)
+		setResolvedUsageRequestIDHeader(c.Writer.Header(), usageRequestID)
 		c.Writer.Header().Set("Content-Type", "text/event-stream")
 		c.Writer.Header().Set("Cache-Control", "no-cache")
 		c.Writer.Header().Set("Connection", "keep-alive")
@@ -761,6 +765,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	resultWithUsage := func() *OpenAIForwardResult {
 		return &OpenAIForwardResult{
 			RequestID:        requestID,
+			UsageRequestID:   usageRequestID,
 			ResponseID:       responseID,
 			Usage:            usage,
 			Model:            originalModel,
