@@ -12,7 +12,16 @@ import (
 const Sub2APIUsageRequestIDHeader = "X-Sub2API-Usage-Request-ID"
 
 func setUsageRequestIDHeader(ctx context.Context, header http.Header, upstreamRequestID string) string {
-	requestID := resolveStableUsageRequestID(ctx, upstreamRequestID)
+	if requestID := strings.TrimSpace(header.Get(Sub2APIUsageRequestIDHeader)); requestID != "" {
+		return requestID
+	}
+	requestID := resolveUsageBillingRequestID(ctx, upstreamRequestID)
+	setResolvedUsageRequestIDHeader(header, requestID)
+	return requestID
+}
+
+func setResolvedUsageRequestIDHeader(header http.Header, requestID string) string {
+	requestID = strings.TrimSpace(requestID)
 	if header != nil && requestID != "" {
 		header.Set(Sub2APIUsageRequestIDHeader, requestID)
 	}

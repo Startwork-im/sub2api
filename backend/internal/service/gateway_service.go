@@ -561,9 +561,10 @@ func requestIDFromHeader(header http.Header) string {
 
 // ForwardResult 转发结果
 type ForwardResult struct {
-	RequestID string
-	Usage     ClaudeUsage
-	Model     string
+	RequestID      string
+	UsageRequestID string
+	Usage          ClaudeUsage
+	Model          string
 	// UpstreamModel is the actual upstream model after mapping.
 	// Prefer empty when it is identical to Model; persistence normalizes equal values away as no-op mappings.
 	UpstreamModel    string
@@ -581,6 +582,16 @@ type ForwardResult struct {
 	ImageOutputSizes   []string
 	ImageSizeSource    string
 	ImageSizeBreakdown map[string]int
+}
+
+func resolveForwardUsageRequestID(ctx context.Context, result *ForwardResult) string {
+	if result == nil {
+		return ""
+	}
+	if requestID := strings.TrimSpace(result.UsageRequestID); requestID != "" {
+		return requestID
+	}
+	return resolveUsageBillingRequestID(ctx, result.RequestID)
 }
 
 // UpstreamFailoverError indicates an upstream error that should trigger account failover.
@@ -5533,6 +5544,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 
 	return &ForwardResult{
 		RequestID:        requestIDFromHeader(resp.Header),
+		UsageRequestID:   setUsageRequestIDHeader(ctx, c.Writer.Header(), requestIDFromHeader(resp.Header)),
 		Usage:            *usage,
 		Model:            originalModel, // 使用原始模型用于计费和日志
 		UpstreamModel:    mappedModel,
@@ -5796,6 +5808,7 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 
 	return &ForwardResult{
 		RequestID:        requestIDFromHeader(resp.Header),
+		UsageRequestID:   setUsageRequestIDHeader(ctx, c.Writer.Header(), requestIDFromHeader(resp.Header)),
 		Usage:            *usage,
 		Model:            input.OriginalModel,
 		UpstreamModel:    input.RequestModel,
@@ -6440,6 +6453,7 @@ func (s *GatewayService) forwardBedrock(
 
 	return &ForwardResult{
 		RequestID:        resp.Header.Get("x-amzn-requestid"),
+		UsageRequestID:   setUsageRequestIDHeader(ctx, c.Writer.Header(), resp.Header.Get("x-amzn-requestid")),
 		Usage:            *usage,
 		Model:            reqModel,
 		UpstreamModel:    mappedModel,
@@ -8776,6 +8790,7 @@ func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *h
 	}
 
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	setUsageRequestIDHeader(ctx, c.Writer.Header(), requestIDFromHeader(resp.Header))
 
 	contentType := "application/json"
 	if s.cfg != nil && !s.cfg.Security.ResponseHeaders.Enabled {
@@ -9535,6 +9550,13 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	return nil
 }
 
+func (s *GatewayService) setForwardUsageRequestIDHeader(ctx context.Context, c *gin.Context, result *ForwardResult) {
+	if c == nil {
+		return
+	}
+	setResolvedUsageRequestIDHeader(c.Writer.Header(), resolveForwardUsageRequestID(ctx, result))
+}
+
 // calculateRecordUsageCost 根据请求类型和选项计算费用。
 func (s *GatewayService) calculateRecordUsageCost(
 	ctx context.Context,
@@ -9686,7 +9708,7 @@ func (s *GatewayService) buildRecordUsageLog(
 	opts *recordUsageOpts,
 ) *UsageLog {
 	durationMs := int(result.Duration.Milliseconds())
-	requestID := resolveUsageBillingRequestID(ctx, result.RequestID)
+	requestID := resolveForwardUsageRequestID(ctx, result)
 	usageLog := &UsageLog{
 		UserID:                user.ID,
 		APIKeyID:              apiKey.ID,
