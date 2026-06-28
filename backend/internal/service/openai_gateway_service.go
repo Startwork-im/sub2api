@@ -2921,6 +2921,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 	// 命中 WS 时仅走 WebSocket Mode；不再自动回退 HTTP。
 	if wsDecision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2 {
+		usageRequestID := setUsageRequestIDHeaderFromGin(c, "")
 		// WS 分支需要结构化 payload 与重连恢复，命中后再触发 full-map decode。
 		wsReqBody, err := ensureReqBody()
 		if err != nil {
@@ -3111,6 +3112,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			requestID := ""
 			if wsResult != nil {
 				requestID = strings.TrimSpace(wsResult.RequestID)
+				wsResult.UsageRequestID = usageRequestID
 			}
 			logOpenAIWSModeDebug(
 				"forward_succeeded account_id=%d request_id=%s stream=%v has_first_token_ms=%v first_token_ms=%d ws_attempts=%d",
