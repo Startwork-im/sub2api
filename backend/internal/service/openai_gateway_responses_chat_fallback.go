@@ -237,6 +237,7 @@ func (s *OpenAIGatewayService) bufferChatCompletionsAsResponses(
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	}
+	setUsageRequestIDHeaderFromGin(c, requestID)
 	c.JSON(http.StatusOK, responsesResp)
 
 	return &OpenAIForwardResult{
@@ -272,6 +273,7 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsResponses(
 		if s.responseHeaderFilter != nil {
 			responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 		}
+		setUsageRequestIDHeaderFromGin(c, requestID)
 		c.Writer.Header().Set("Content-Type", "text/event-stream")
 		c.Writer.Header().Set("Cache-Control", "no-cache")
 		c.Writer.Header().Set("Connection", "keep-alive")

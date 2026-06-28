@@ -1048,6 +1048,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 	if requestID != "" {
 		c.Header("x-request-id", requestID)
 	}
+	setUsageRequestIDHeaderFromGin(c, requestID)
 
 	var usage *ClaudeUsage
 	var firstTokenMs *int
@@ -1421,6 +1422,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 	if requestID != "" {
 		c.Header("x-request-id", requestID)
 	}
+	setUsageRequestIDHeaderFromGin(c, requestID)
 
 	isOAuth := account.Type == AccountTypeOAuth
 
@@ -2524,6 +2526,7 @@ func (s *GeminiMessagesCompatService) handleNativeNonStreamingResponse(c *gin.Co
 	}
 
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	setUsageRequestIDHeaderFromGin(c, firstNonEmpty(resp.Header.Get("x-request-id"), resp.Header.Get("x-goog-request-id")))
 
 	contentType := resp.Header.Get("Content-Type")
 	if contentType == "" {

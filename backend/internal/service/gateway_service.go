@@ -5882,6 +5882,7 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 	}
 
 	writeAnthropicPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	setUsageRequestIDHeaderFromGin(c, requestIDFromHeader(resp.Header))
 
 	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
 	if contentType == "" {
@@ -6272,6 +6273,7 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 	usage := parseClaudeUsageFromResponseBody(body)
 
 	writeAnthropicPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	setUsageRequestIDHeaderFromGin(c, requestIDFromHeader(resp.Header))
 	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
 	if contentType == "" {
 		contentType = "application/json"
@@ -6686,6 +6688,7 @@ func (s *GatewayService) handleBedrockNonStreamingResponse(
 	if v := resp.Header.Get("x-amzn-requestid"); v != "" {
 		c.Header("x-request-id", v)
 	}
+	setUsageRequestIDHeaderFromGin(c, resp.Header.Get("x-amzn-requestid"))
 	c.Data(resp.StatusCode, "application/json", body)
 	return usage, nil
 }
@@ -8098,6 +8101,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	}
+	setUsageRequestIDHeaderFromGin(c, requestIDFromHeader(resp.Header))
 
 	// 设置SSE响应头
 	c.Header("Content-Type", "text/event-stream")

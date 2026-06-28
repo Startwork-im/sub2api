@@ -3944,6 +3944,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	mappedModel string,
 ) (*openaiStreamingResultPassthrough, error) {
 	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	setUsageRequestIDHeaderFromGin(c, resp.Header.Get("x-request-id"))
 
 	// SSE headers
 	c.Header("Content-Type", "text/event-stream")
@@ -4174,6 +4175,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	}
 
 	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	setUsageRequestIDHeaderFromGin(c, resp.Header.Get("x-request-id"))
 
 	contentType := resp.Header.Get("Content-Type")
 	if contentType == "" {
@@ -4237,6 +4239,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 	}
 
 	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	setUsageRequestIDHeaderFromGin(c, resp.Header.Get("x-request-id"))
 
 	contentType := "application/json; charset=utf-8"
 	if !ok {

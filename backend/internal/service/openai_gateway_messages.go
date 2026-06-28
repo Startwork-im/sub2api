@@ -484,6 +484,7 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	}
+	setUsageRequestIDHeaderFromGin(c, requestID)
 	c.JSON(http.StatusOK, anthropicResp)
 
 	return &OpenAIForwardResult{
@@ -718,6 +719,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		if s.responseHeaderFilter != nil {
 			responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 		}
+		setUsageRequestIDHeaderFromGin(c, requestID)
 		c.Writer.Header().Set("Content-Type", "text/event-stream")
 		c.Writer.Header().Set("Cache-Control", "no-cache")
 		c.Writer.Header().Set("Connection", "keep-alive")

@@ -339,6 +339,7 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	}
+	setUsageRequestIDHeaderFromGin(c, requestID)
 	// 非流式响应必须是 application/json。上游被强制流式后会返回
 	// Content-Type: text/event-stream，经 WriteFilteredHeaders 透传后会污染
 	// 响应头；而 c.Data/c.JSON 走 Gin 的 writeContentType（仅当头不存在时才设置），
@@ -378,6 +379,7 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	}
+	setUsageRequestIDHeaderFromGin(c, requestID)
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
