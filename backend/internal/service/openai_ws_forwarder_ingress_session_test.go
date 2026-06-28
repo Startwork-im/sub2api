@@ -696,6 +696,8 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughModeR
 	select {
 	case result := <-resultCh:
 		require.Equal(t, "resp_passthrough_turn_1", result.RequestID)
+		require.NotEmpty(t, result.UsageRequestID)
+		require.NotEqual(t, result.RequestID, result.UsageRequestID)
 		require.True(t, result.OpenAIWSMode)
 		require.Equal(t, 2, result.Usage.InputTokens)
 		require.Equal(t, 3, result.Usage.OutputTokens)
@@ -3856,6 +3858,8 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ClientDisconnect
 	select {
 	case result := <-resultCh:
 		require.Equal(t, "resp_ingress_disconnect", result.RequestID)
+		require.NotEmpty(t, result.UsageRequestID)
+		require.NotEqual(t, result.RequestID, result.UsageRequestID)
 		require.Equal(t, 2, result.Usage.InputTokens)
 		require.Equal(t, 1, result.Usage.OutputTokens)
 		require.NotNil(t, result.ServiceTier)
