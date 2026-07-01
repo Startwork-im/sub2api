@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -117,6 +118,87 @@ func TestOpenAIGatewayService_Forward_HTTPPatchPathKeepsLargeInputRaw(t *testing
 	expectedBody := fmt.Sprintf(`{"model":"gpt-5","stream":false,"reasoning":{"effort":"none"},"instructions":%s,"input":[{"type":"message","content":[{"type":"input_text","text":"hi","nonce":9007199254740993}]}]}`, string(encodedInstr))
 	require.JSONEq(t, expectedBody, string(upstream.lastBody))
 	require.Equal(t, "9007199254740993", gjson.GetBytes(upstream.lastBody, "input.0.content.0.nonce").Raw)
+}
+
+func TestOpenAIGatewayService_Forward_HTTPBindsUsageRequestIDFromUpstreamHeader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}, "X-Request-Id": []string{"upstream-http-req-id"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"id":"resp_http_usage","usage":{"input_tokens":1,"output_tokens":2,"input_tokens_details":{"cached_tokens":0}}}`,
+			)),
+		},
+	}
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
+	account := &Account{
+		ID:          12,
+		Name:        "openai-apikey",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": "https://example.com",
+		},
+		Extra: map[string]any{"use_responses_api": true},
+	}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+
+	body := []byte(`{"model":"gpt-5","stream":false,"input":"hi"}`)
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "upstream-http-req-id", result.RequestID)
+	require.Equal(t, "upstream-http-req-id", result.UsageRequestID)
+	require.Equal(t, "upstream-http-req-id", rec.Header().Get(Sub2APIUsageRequestIDHeader))
+}
+
+func TestOpenAIGatewayService_Forward_HTTPBindsUsageRequestIDFromClientRequestID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"id":"resp_http_usage_client","usage":{"input_tokens":1,"output_tokens":2,"input_tokens_details":{"cached_tokens":0}}}`,
+			)),
+		},
+	}
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
+	account := &Account{
+		ID:          13,
+		Name:        "openai-apikey",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": "https://example.com",
+		},
+		Extra: map[string]any{"use_responses_api": true},
+	}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	reqCtx := context.WithValue(context.Background(), ctxkey.ClientRequestID, "client-http-stable-123")
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil).WithContext(reqCtx)
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+
+	body := []byte(`{"model":"gpt-5","stream":false,"input":"hi"}`)
+	result, err := svc.Forward(reqCtx, c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Empty(t, result.RequestID)
+	require.Equal(t, "client:client-http-stable-123", result.UsageRequestID)
+	require.Equal(t, "client:client-http-stable-123", rec.Header().Get(Sub2APIUsageRequestIDHeader))
 }
 
 func TestOpenAIGatewayService_Forward_DecodedMutationKeepsLaterFieldDeletes(t *testing.T) {
