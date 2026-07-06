@@ -469,6 +469,7 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	}
+	usageRequestID := setUsageRequestIDHeaderFromGin(c)
 	// 非流式响应必须为标准 JSON。上游被强制流式，其响应头 Content-Type 为
 	// text/event-stream，会经 WriteFilteredHeaders 透传进来；而 c.JSON 走 Gin 的
 	// writeContentType 仅在头不存在时才设置，无法覆盖。这里显式 Set 强制改回 JSON，
@@ -477,13 +478,14 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 	c.JSON(http.StatusOK, chatResp)
 
 	return &OpenAIForwardResult{
-		RequestID:     requestID,
-		Usage:         usage,
-		Model:         originalModel,
-		BillingModel:  billingModel,
-		UpstreamModel: upstreamModel,
-		Stream:        false,
-		Duration:      time.Since(startTime),
+		RequestID:      requestID,
+		UsageRequestID: usageRequestID,
+		Usage:          usage,
+		Model:          originalModel,
+		BillingModel:   billingModel,
+		UpstreamModel:  upstreamModel,
+		Stream:         false,
+		Duration:       time.Since(startTime),
 	}, nil
 }
 
@@ -500,6 +502,13 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	requestBodyLen int,
 ) (*OpenAIForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
+	usageRequestID := ""
+	ensureUsageRequestID := func() string {
+		if usageRequestID == "" {
+			usageRequestID = setUsageRequestIDHeaderFromGin(c)
+		}
+		return usageRequestID
+	}
 
 	headersWritten := false
 	writeStreamHeaders := func() {
@@ -510,6 +519,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		if s.responseHeaderFilter != nil {
 			responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 		}
+		ensureUsageRequestID()
 		c.Writer.Header().Set("Content-Type", "text/event-stream")
 		c.Writer.Header().Set("Cache-Control", "no-cache")
 		c.Writer.Header().Set("Connection", "keep-alive")
@@ -556,14 +566,15 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 
 	resultWithUsage := func() *OpenAIForwardResult {
 		return &OpenAIForwardResult{
-			RequestID:     requestID,
-			Usage:         usage,
-			Model:         originalModel,
-			BillingModel:  billingModel,
-			UpstreamModel: upstreamModel,
-			Stream:        true,
-			Duration:      time.Since(startTime),
-			FirstTokenMs:  firstTokenMs,
+			RequestID:      requestID,
+			UsageRequestID: ensureUsageRequestID(),
+			Usage:          usage,
+			Model:          originalModel,
+			BillingModel:   billingModel,
+			UpstreamModel:  upstreamModel,
+			Stream:         true,
+			Duration:       time.Since(startTime),
+			FirstTokenMs:   firstTokenMs,
 		}
 	}
 

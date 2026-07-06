@@ -287,6 +287,13 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	requestBodyLen int,
 ) (*OpenAIForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
+	usageRequestID := ""
+	ensureUsageRequestID := func() string {
+		if usageRequestID == "" {
+			usageRequestID = setUsageRequestIDHeaderFromGin(c)
+		}
+		return usageRequestID
+	}
 
 	headersWritten := false
 	writeStreamHeaders := func() {
@@ -297,6 +304,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		if s.responseHeaderFilter != nil {
 			responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 		}
+		ensureUsageRequestID()
 		c.Writer.Header().Set("Content-Type", "text/event-stream")
 		c.Writer.Header().Set("Cache-Control", "no-cache")
 		c.Writer.Header().Set("Connection", "keep-alive")
@@ -411,6 +419,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 
 	return &OpenAIForwardResult{
 		RequestID:       requestID,
+		UsageRequestID:  ensureUsageRequestID(),
 		Usage:           usage,
 		Model:           originalModel,
 		BillingModel:    billingModel,
@@ -498,6 +507,7 @@ func (s *OpenAIGatewayService) bufferRawChatCompletions(
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	}
+	usageRequestID := setUsageRequestIDHeaderFromGin(c)
 	if ct := resp.Header.Get("Content-Type"); ct != "" {
 		c.Writer.Header().Set("Content-Type", ct)
 	} else {
@@ -508,6 +518,7 @@ func (s *OpenAIGatewayService) bufferRawChatCompletions(
 
 	return &OpenAIForwardResult{
 		RequestID:       requestID,
+		UsageRequestID:  usageRequestID,
 		Usage:           usage,
 		Model:           originalModel,
 		BillingModel:    billingModel,

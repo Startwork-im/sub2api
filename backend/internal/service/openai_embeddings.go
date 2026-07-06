@@ -148,29 +148,31 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 		return nil, fmt.Errorf("read upstream body: %w", err)
 	}
 
-	writeOpenAIEmbeddingsUpstreamResponse(c, resp, respBody, s.responseHeaderFilter)
+	usageRequestID := writeOpenAIEmbeddingsUpstreamResponse(c, resp, respBody, s.responseHeaderFilter)
 
 	return &OpenAIForwardResult{
-		RequestID:     firstNonEmptyString(resp.Header.Get("x-request-id"), resp.Header.Get("request-id")),
-		Usage:         extractOpenAIEmbeddingsUsage(respBody),
-		Model:         originalModel,
-		BillingModel:  billingModel,
-		UpstreamModel: upstreamModel,
-		Stream:        false,
-		Duration:      time.Since(startTime),
+		RequestID:      firstNonEmptyString(resp.Header.Get("x-request-id"), resp.Header.Get("request-id")),
+		UsageRequestID: usageRequestID,
+		Usage:          extractOpenAIEmbeddingsUsage(respBody),
+		Model:          originalModel,
+		BillingModel:   billingModel,
+		UpstreamModel:  upstreamModel,
+		Stream:         false,
+		Duration:       time.Since(startTime),
 	}, nil
 }
 
-func writeOpenAIEmbeddingsUpstreamResponse(c *gin.Context, resp *http.Response, body []byte, filter *responseheaders.CompiledHeaderFilter) {
+func writeOpenAIEmbeddingsUpstreamResponse(c *gin.Context, resp *http.Response, body []byte, filter *responseheaders.CompiledHeaderFilter) string {
 	if c == nil || resp == nil {
-		return
+		return ""
 	}
 	if c.Writer.Written() {
-		return
+		return strings.TrimSpace(c.Writer.Header().Get(Sub2APIUsageRequestIDHeader))
 	}
 	if resp.Header != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, filter)
 	}
+	usageRequestID := setUsageRequestIDHeaderFromGin(c)
 	if ct := resp.Header.Get("Content-Type"); ct != "" {
 		c.Writer.Header().Set("Content-Type", ct)
 	} else {
@@ -178,6 +180,7 @@ func writeOpenAIEmbeddingsUpstreamResponse(c *gin.Context, resp *http.Response, 
 	}
 	c.Writer.WriteHeader(resp.StatusCode)
 	_, _ = c.Writer.Write(body)
+	return usageRequestID
 }
 
 func writeOpenAIEmbeddingsError(c *gin.Context, statusCode int, errType, message string) {

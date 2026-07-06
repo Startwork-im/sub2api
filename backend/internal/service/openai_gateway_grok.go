@@ -94,6 +94,7 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 	s.updateGrokUsageSnapshot(ctx, account.ID, xai.ParseQuotaHeaders(resp.Header, resp.StatusCode))
 
 	var usage *OpenAIUsage
+	usageRequestID := ""
 	var firstTokenMs *int
 	responseID := ""
 	if reqStream {
@@ -102,6 +103,9 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 			return nil, err
 		}
 		usage = streamResult.usage
+		if streamResult.usageRequestID != "" {
+			usageRequestID = streamResult.usageRequestID
+		}
 		firstTokenMs = streamResult.firstTokenMs
 		responseID = strings.TrimSpace(streamResult.responseID)
 	} else {
@@ -110,6 +114,9 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 			return nil, err
 		}
 		usage = nonStreamResult.usage
+		if nonStreamResult.usageRequestID != "" {
+			usageRequestID = nonStreamResult.usageRequestID
+		}
 		responseID = strings.TrimSpace(nonStreamResult.responseID)
 	}
 
@@ -118,6 +125,7 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 	}
 	return &OpenAIForwardResult{
 		RequestID:       firstNonEmpty(resp.Header.Get("x-request-id"), resp.Header.Get("xai-request-id")),
+		UsageRequestID:  usageRequestID,
 		ResponseID:      responseID,
 		Usage:           *usage,
 		Model:           originalModel,

@@ -293,7 +293,7 @@ func TestOpenAIGatewayServiceRecordUsage_ZeroUsageStillWritesUsageLog(t *testing
 	require.Equal(t, 0, quotaSvc.rateLimitCalls)
 
 	require.NotNil(t, usageRepo.lastLog)
-	require.Equal(t, "resp_zero_usage", usageRepo.lastLog.RequestID)
+	require.True(t, strings.HasPrefix(usageRepo.lastLog.RequestID, "usage:"))
 	require.Zero(t, usageRepo.lastLog.InputTokens)
 	require.Zero(t, usageRepo.lastLog.OutputTokens)
 	require.Zero(t, usageRepo.lastLog.CacheCreationTokens)
@@ -346,7 +346,7 @@ func TestOpenAIGatewayServiceRecordUsage_MissingPricingRecordsZeroCostUsageLog(t
 	require.Equal(t, 0, quotaSvc.rateLimitCalls)
 
 	require.NotNil(t, usageRepo.lastLog)
-	require.Equal(t, "resp_missing_pricing", usageRepo.lastLog.RequestID)
+	require.True(t, strings.HasPrefix(usageRepo.lastLog.RequestID, "usage:"))
 	require.Equal(t, "pricing-missing-test-model", usageRepo.lastLog.Model)
 	require.Equal(t, "pricing-missing-test-model", usageRepo.lastLog.RequestedModel)
 	require.Equal(t, 1200, usageRepo.lastLog.InputTokens)
@@ -822,12 +822,12 @@ func TestOpenAIGatewayServiceRecordUsage_UsesFallbackRequestIDForBillingAndUsage
 
 	require.NoError(t, err)
 	require.NotNil(t, billingRepo.lastCmd)
-	require.Equal(t, "local:req-local-fallback", billingRepo.lastCmd.RequestID)
+	require.True(t, strings.HasPrefix(billingRepo.lastCmd.RequestID, "usage:"))
 	require.NotNil(t, usageRepo.lastLog)
-	require.Equal(t, "local:req-local-fallback", usageRepo.lastLog.RequestID)
+	require.Equal(t, billingRepo.lastCmd.RequestID, usageRepo.lastLog.RequestID)
 }
 
-func TestOpenAIGatewayServiceRecordUsage_PrefersClientRequestIDOverUpstreamRequestID(t *testing.T) {
+func TestOpenAIGatewayServiceRecordUsage_IgnoresUpstreamAndClientRequestIDForUsageLog(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
 	userRepo := &openAIRecordUsageUserRepoStub{}
@@ -852,12 +852,44 @@ func TestOpenAIGatewayServiceRecordUsage_PrefersClientRequestIDOverUpstreamReque
 
 	require.NoError(t, err)
 	require.NotNil(t, billingRepo.lastCmd)
-	require.Equal(t, "client:openai-client-stable-123", billingRepo.lastCmd.RequestID)
+	require.True(t, strings.HasPrefix(billingRepo.lastCmd.RequestID, "usage:"))
 	require.NotNil(t, usageRepo.lastLog)
-	require.Equal(t, "client:openai-client-stable-123", usageRepo.lastLog.RequestID)
+	require.Equal(t, billingRepo.lastCmd.RequestID, usageRepo.lastLog.RequestID)
+	require.NotEqual(t, "upstream-openai-volatile-456", usageRepo.lastLog.RequestID)
 }
 
-func TestOpenAIGatewayServiceRecordUsage_WSModePrefersUpstreamRequestIDOverClientRequestID(t *testing.T) {
+func TestOpenAIGatewayServiceRecordUsage_PrefersUsageRequestID(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, subRepo, nil)
+
+	ctx := context.WithValue(context.Background(), ctxkey.ClientRequestID, "openai-client-stable-123")
+	err := svc.RecordUsage(ctx, &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:      "upstream-openai-volatile-456",
+			UsageRequestID: "usage-log-openai-stable-789",
+			Usage: OpenAIUsage{
+				InputTokens:  8,
+				OutputTokens: 4,
+			},
+			Model:    "gpt-5.1",
+			Duration: time.Second,
+		},
+		APIKey:  &APIKey{ID: 10051},
+		User:    &User{ID: 20051},
+		Account: &Account{ID: 30051},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, billingRepo.lastCmd)
+	require.Equal(t, "usage-log-openai-stable-789", billingRepo.lastCmd.RequestID)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, "usage-log-openai-stable-789", usageRepo.lastLog.RequestID)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_WSModeRequiresUsageRequestIDForBillingIdentity(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
 	userRepo := &openAIRecordUsageUserRepoStub{}
@@ -883,12 +915,16 @@ func TestOpenAIGatewayServiceRecordUsage_WSModePrefersUpstreamRequestIDOverClien
 
 	require.NoError(t, err)
 	require.NotNil(t, billingRepo.lastCmd)
-	require.Equal(t, "resp_openai_ws_turn_456", billingRepo.lastCmd.RequestID)
+	require.True(t, strings.HasPrefix(billingRepo.lastCmd.RequestID, "usage:"))
 	require.NotNil(t, usageRepo.lastLog)
-	require.Equal(t, "resp_openai_ws_turn_456", usageRepo.lastLog.RequestID)
+	require.Equal(t, billingRepo.lastCmd.RequestID, usageRepo.lastLog.RequestID)
+	require.NotEqual(t, "resp_openai_ws_turn_456", usageRepo.lastLog.RequestID)
 }
 
 func TestOpenAIGatewayServiceRecordUsage_GeneratesRequestIDWhenAllSourcesMissing(t *testing.T) {
+	logSink, cleanup := captureStructuredLog(t)
+	defer cleanup()
+
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
 	userRepo := &openAIRecordUsageUserRepoStub{}
@@ -912,9 +948,12 @@ func TestOpenAIGatewayServiceRecordUsage_GeneratesRequestIDWhenAllSourcesMissing
 
 	require.NoError(t, err)
 	require.NotNil(t, billingRepo.lastCmd)
-	require.True(t, strings.HasPrefix(billingRepo.lastCmd.RequestID, "generated:"))
+	require.True(t, strings.HasPrefix(billingRepo.lastCmd.RequestID, "usage:"))
 	require.NotNil(t, usageRepo.lastLog)
 	require.Equal(t, billingRepo.lastCmd.RequestID, usageRepo.lastLog.RequestID)
+	require.True(t, logSink.ContainsMessage("ALERT_BILLING usage_billing.sub2api_usage_request_id_invariant_broken"))
+	require.True(t, logSink.ContainsFieldValue("alert_key", "ALERT_BILLING"))
+	require.True(t, logSink.ContainsFieldValue("generated_usage_request_id", usageRepo.lastLog.RequestID))
 }
 
 func TestOpenAIGatewayServiceRecordUsage_BillingErrorSkipsUsageLogWrite(t *testing.T) {

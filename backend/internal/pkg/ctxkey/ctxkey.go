@@ -14,6 +14,9 @@ const (
 	// ClientRequestID 客户端请求的唯一标识，用于追踪请求全生命周期（用于 Ops 监控与排障）。
 	ClientRequestID Key = "ctx_client_request_id"
 
+	// UsageRequestID 是 Sub2API 自己生成的 usage_logs.request_id 稳定主键。
+	UsageRequestID Key = "ctx_usage_request_id"
+
 	// Model 请求模型标识（用于统一请求链路日志字段）。
 	Model Key = "ctx_model"
 

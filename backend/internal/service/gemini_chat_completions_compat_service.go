@@ -203,6 +203,7 @@ func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 	if requestID != "" {
 		c.Header("x-request-id", requestID)
 	}
+	usageRequestID := setUsageRequestIDHeaderFromGin(c)
 
 	reasoningEffort := extractCCReasoningEffortFromBody(originalChatBody)
 	// 国产模型默认 effort 补充（本路径上游是 Gemini，不会命中 passback-required）。
@@ -239,6 +240,9 @@ func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 			return nil, err
 		}
 		usage = streamRes.usage
+		if streamRes.usageRequestID != "" {
+			usageRequestID = streamRes.usageRequestID
+		}
 		firstTokenMs = streamRes.firstTokenMs
 	} else if useUpstreamStream {
 		collected, usageObj, err := collectGeminiSSE(resp.Body, account.Type == AccountTypeOAuth)
@@ -273,6 +277,7 @@ func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 
 	return &ForwardResult{
 		RequestID:        requestID,
+		UsageRequestID:   usageRequestID,
 		Usage:            *usage,
 		Model:            originalModel,
 		UpstreamModel:    mappedModel,
@@ -500,6 +505,7 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	}
+	usageRequestID := setUsageRequestIDHeaderFromGin(c)
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
@@ -784,7 +790,7 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 	_, _ = io.WriteString(c.Writer, "data: [DONE]\n\n")
 	flusher.Flush()
 
-	return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil
+	return &geminiStreamResult{usage: &usage, usageRequestID: usageRequestID, firstTokenMs: firstTokenMs}, nil
 }
 
 func (s *GeminiMessagesCompatService) writeGeminiChatCompletionsMappedError(
