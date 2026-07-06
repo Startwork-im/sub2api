@@ -1781,6 +1781,7 @@ func (s *AntigravityGatewayService) Forward(ctx context.Context, c *gin.Context,
 	if requestID != "" {
 		c.Header("x-request-id", requestID)
 	}
+	usageRequestID := setUsageRequestIDHeaderFromGin(c)
 
 	var usage *ClaudeUsage
 	var firstTokenMs *int
@@ -1808,6 +1809,7 @@ func (s *AntigravityGatewayService) Forward(ctx context.Context, c *gin.Context,
 
 	return &ForwardResult{
 		RequestID:        requestID,
+		UsageRequestID:   usageRequestID,
 		Usage:            *usage,
 		Model:            originalModel,
 		UpstreamModel:    billingModel,
@@ -2489,6 +2491,7 @@ handleSuccess:
 	if requestID != "" {
 		c.Header("x-request-id", requestID)
 	}
+	usageRequestID := setUsageRequestIDHeaderFromGin(c)
 
 	var usage *ClaudeUsage
 	var firstTokenMs *int
@@ -2528,6 +2531,7 @@ handleSuccess:
 
 	return &ForwardResult{
 		RequestID:        requestID,
+		UsageRequestID:   usageRequestID,
 		Usage:            *usage,
 		Model:            originalModel,
 		UpstreamModel:    billingModel,
@@ -4418,8 +4422,12 @@ func (s *AntigravityGatewayService) ForwardUpstream(ctx context.Context, c *gin.
 	// 构建计费结果
 	duration := time.Since(startTime)
 	logger.LegacyPrintf("service.antigravity_gateway", "%s status=success duration_ms=%d", prefix, duration.Milliseconds())
+	requestID := resp.Header.Get("x-request-id")
+	usageRequestID := setUsageRequestIDHeaderFromGin(c)
 
 	return &ForwardResult{
+		RequestID:        requestID,
+		UsageRequestID:   usageRequestID,
 		Model:            originalModel,
 		Stream:           claudeReq.Stream,
 		Duration:         duration,

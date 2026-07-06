@@ -348,10 +348,11 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	if err != nil {
 		return nil, err
 	}
-	writeGrokMediaResponse(c, resp, respBody, s.responseHeaderFilter)
+	usageRequestID := writeGrokMediaResponse(c, resp, respBody, s.responseHeaderFilter)
 	usage := grokMediaUsageFromResponse(endpoint, requestInfo, respBody)
 	return &OpenAIForwardResult{
 		RequestID:        requestIDHeader,
+		UsageRequestID:   usageRequestID,
 		ResponseID:       usage.ResponseID,
 		Usage:            usage.Usage,
 		Model:            requestModel,
@@ -610,14 +611,16 @@ func writeGrokMediaErrorResponse(c *gin.Context, statusCode int, errType, messag
 	})
 }
 
-func writeGrokMediaResponse(c *gin.Context, resp *http.Response, body []byte, filter *responseheaders.CompiledHeaderFilter) {
+func writeGrokMediaResponse(c *gin.Context, resp *http.Response, body []byte, filter *responseheaders.CompiledHeaderFilter) string {
 	if c == nil || resp == nil {
-		return
+		return ""
 	}
 	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, filter)
+	usageRequestID := setUsageRequestIDHeaderFromGin(c)
 	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
 	if contentType == "" {
 		contentType = "application/json"
 	}
 	c.Data(resp.StatusCode, contentType, body)
+	return usageRequestID
 }

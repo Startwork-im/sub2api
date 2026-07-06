@@ -1048,6 +1048,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 	if requestID != "" {
 		c.Header("x-request-id", requestID)
 	}
+	usageRequestID := setUsageRequestIDHeaderFromGin(c)
 
 	var usage *ClaudeUsage
 	var firstTokenMs *int
@@ -1057,6 +1058,9 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 			return nil, err
 		}
 		usage = streamRes.usage
+		if streamRes.usageRequestID != "" {
+			usageRequestID = streamRes.usageRequestID
+		}
 		firstTokenMs = streamRes.firstTokenMs
 	} else {
 		if useUpstreamStream {
@@ -1089,6 +1093,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 
 	return &ForwardResult{
 		RequestID:      requestID,
+		UsageRequestID: usageRequestID,
 		Usage:          *usage,
 		Model:          originalModel,
 		UpstreamModel:  mappedModel,
@@ -1421,6 +1426,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 	if requestID != "" {
 		c.Header("x-request-id", requestID)
 	}
+	usageRequestID := setUsageRequestIDHeaderFromGin(c)
 
 	isOAuth := account.Type == AccountTypeOAuth
 
@@ -1433,13 +1439,14 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 			estimated := estimateGeminiCountTokens(body)
 			c.JSON(http.StatusOK, map[string]any{"totalTokens": estimated})
 			return &ForwardResult{
-				RequestID:     requestID,
-				Usage:         ClaudeUsage{},
-				Model:         originalModel,
-				UpstreamModel: mappedModel,
-				Stream:        false,
-				Duration:      time.Since(startTime),
-				FirstTokenMs:  nil,
+				RequestID:      requestID,
+				UsageRequestID: usageRequestID,
+				Usage:          ClaudeUsage{},
+				Model:          originalModel,
+				UpstreamModel:  mappedModel,
+				Stream:         false,
+				Duration:       time.Since(startTime),
+				FirstTokenMs:   nil,
 			}, nil
 		}
 
@@ -1582,6 +1589,9 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 			return nil, err
 		}
 		usage = streamRes.usage
+		if streamRes.usageRequestID != "" {
+			usageRequestID = streamRes.usageRequestID
+		}
 		firstTokenMs = streamRes.firstTokenMs
 	} else {
 		if useUpstreamStream {
@@ -1615,6 +1625,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 
 	return &ForwardResult{
 		RequestID:      requestID,
+		UsageRequestID: usageRequestID,
 		Usage:          *usage,
 		Model:          originalModel,
 		UpstreamModel:  mappedModel,
@@ -1939,8 +1950,9 @@ func mapGeminiStatusToClaudeErrorType(status string) string {
 }
 
 type geminiStreamResult struct {
-	usage        *ClaudeUsage
-	firstTokenMs *int
+	usage          *ClaudeUsage
+	usageRequestID string
+	firstTokenMs   *int
 }
 
 func (s *GeminiMessagesCompatService) handleNonStreamingResponse(c *gin.Context, resp *http.Response, originalModel string) (*ClaudeUsage, error) {
@@ -2430,8 +2442,9 @@ func mergeCollectedTextParts(response map[string]any, textParts []string) map[st
 }
 
 type geminiNativeStreamResult struct {
-	usage        *ClaudeUsage
-	firstTokenMs *int
+	usage          *ClaudeUsage
+	usageRequestID string
+	firstTokenMs   *int
 }
 
 func isGeminiInsufficientScope(headers http.Header, body []byte) bool {
@@ -2524,6 +2537,7 @@ func (s *GeminiMessagesCompatService) handleNativeNonStreamingResponse(c *gin.Co
 	}
 
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	setUsageRequestIDHeaderFromGin(c)
 
 	contentType := resp.Header.Get("Content-Type")
 	if contentType == "" {
@@ -2551,6 +2565,7 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(c *gin.Conte
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	}
+	usageRequestID := setUsageRequestIDHeaderFromGin(c)
 
 	c.Status(resp.StatusCode)
 	c.Header("Cache-Control", "no-cache")
@@ -2629,7 +2644,7 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(c *gin.Conte
 		}
 	}
 
-	return &geminiNativeStreamResult{usage: usage, firstTokenMs: firstTokenMs}, nil
+	return &geminiNativeStreamResult{usage: usage, usageRequestID: usageRequestID, firstTokenMs: firstTokenMs}, nil
 }
 
 // ForwardAIStudioGET forwards a GET request to AI Studio (generativelanguage.googleapis.com) for
