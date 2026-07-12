@@ -139,8 +139,9 @@
                   </div>
                 </div>
 
-                <!-- Retry button -->
+                <!-- Retry button — Startwork: patch 隐藏(重试=再次触发应用内自更新) -->
                 <button
+                  v-if="false"
                   @click="handleUpdate"
                   :disabled="updating"
                   class="flex w-full items-center justify-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
@@ -317,8 +318,10 @@
                   </div>
                 </div>
 
-                <!-- Update button -->
+                <!-- Update button — Startwork: patch 隐藏应用内更新触发,避免误触自更新
+                     (会拉未打补丁的上游二进制、回退全部 patch)。版本发现/新版本提示照常,升级走部署流水线 -->
                 <button
+                  v-if="false"
                   @click="handleUpdate"
                   :disabled="updating"
                   class="flex w-full items-center justify-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-50"
