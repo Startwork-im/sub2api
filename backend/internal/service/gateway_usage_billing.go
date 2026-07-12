@@ -189,6 +189,13 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 
 func resolveUsageBillingRequestID(ctx context.Context, upstreamRequestID string) string {
 	if ctx != nil {
+		// Startwork: patch —— usage 记账锚点优先。入口中间件已在 ctx 种下 usage:<uuid>，
+		// 原样返回（不加前缀），使 usage_logs.request_id == 回传给 Startwork 的响应头值，
+		// 保证「回传头 == 落库 id」恒等。两条计费线（Anthropic/OpenAI）都经此 resolver，
+		// 异步 worker 的 ctx 亦经 usageRecordContext 透传该 key，故一处覆盖全部路径。
+		if usageRequestID, _ := ctx.Value(ctxkey.UsageRequestID).(string); strings.TrimSpace(usageRequestID) != "" {
+			return strings.TrimSpace(usageRequestID)
+		}
 		if clientRequestID, _ := ctx.Value(ctxkey.ClientRequestID).(string); strings.TrimSpace(clientRequestID) != "" {
 			return "client:" + strings.TrimSpace(clientRequestID)
 		}

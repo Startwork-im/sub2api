@@ -14,6 +14,11 @@ const (
 	// ClientRequestID 客户端请求的唯一标识，用于追踪请求全生命周期（用于 Ops 监控与排障）。
 	ClientRequestID Key = "ctx_client_request_id"
 
+	// UsageRequestID 是 Sub2API 自己生成的 usage_logs.request_id 稳定记账锚点（Startwork: patch）。
+	// 在请求入口中间件生成，写响应头 X-Sub2API-Usage-Request-ID 回传给 Startwork，并作为
+	// usage_logs.request_id 落库，保证「回传头 == 落库 id」恒等，供 Startwork 侧对账扣费。
+	UsageRequestID Key = "ctx_usage_request_id"
+
 	// Model 请求模型标识（用于统一请求链路日志字段）。
 	Model Key = "ctx_model"
 

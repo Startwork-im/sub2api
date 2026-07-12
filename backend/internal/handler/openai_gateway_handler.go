@@ -78,6 +78,12 @@ func usageRecordContext(parent context.Context, base context.Context) context.Co
 	if parent == nil {
 		return base
 	}
+	// Startwork: patch —— 把 usage 记账锚点透传进（脱离请求生命周期的）异步记账 worker ctx，
+	// 否则 detached worker 里 resolveUsageBillingRequestID 读不到锚点会回退铸造新 id 造成分叉。
+	// gateway(Anthropic) 与 openai 两侧异步记账都经 wrapUsageRecordTaskContext→本函数，一处覆盖。
+	if usageRequestID, _ := parent.Value(ctxkey.UsageRequestID).(string); strings.TrimSpace(usageRequestID) != "" {
+		base = context.WithValue(base, ctxkey.UsageRequestID, strings.TrimSpace(usageRequestID))
+	}
 	if clientRequestID, _ := parent.Value(ctxkey.ClientRequestID).(string); strings.TrimSpace(clientRequestID) != "" {
 		base = context.WithValue(base, ctxkey.ClientRequestID, strings.TrimSpace(clientRequestID))
 	}
