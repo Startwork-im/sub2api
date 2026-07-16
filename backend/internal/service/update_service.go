@@ -175,10 +175,18 @@ func (s *UpdateService) PerformUpdate(ctx context.Context) error {
 	return s.applyReleaseAssets(ctx, info.ReleaseInfo.Assets)
 }
 
+// startworkSelfUpdateDisabled —— Startwork: patch 禁用应用内自更新/回滚（任何替换运行二进制的操作）。
+// 应用内换二进制会从上游 Wei-Shaw/sub2api 拉未打补丁的版本原子替换，静默回退全部 Startwork patch；
+// 升级/回滚统一走部署流水线。用【变量】而非常量，避免 go vet 把守卫之后的原逻辑判为 unreachable。
+var startworkSelfUpdateDisabled = true
+
 // applyReleaseAssets downloads the platform archive from the given release assets,
 // verifies its checksum, and atomically swaps the running binary.
 // Shared by PerformUpdate (latest) and RollbackToVersion (specific older version).
 func (s *UpdateService) applyReleaseAssets(ctx context.Context, releaseAssets []Asset) error {
+	if startworkSelfUpdateDisabled { // Startwork: patch 封死 /update 与 /rollback（download 路径）
+		return fmt.Errorf("self-update/rollback is disabled by Startwork patch; upgrade via the deploy pipeline")
+	}
 	// Find matching archive and checksum for current platform
 	archiveName := s.getArchiveName()
 	var downloadURL string
@@ -281,6 +289,9 @@ func (s *UpdateService) applyReleaseAssets(ctx context.Context, releaseAssets []
 
 // Rollback restores the previous version
 func (s *UpdateService) Rollback() error {
+	if startworkSelfUpdateDisabled { // Startwork: patch 封死本地备份还原路径（os.Rename 换二进制）
+		return fmt.Errorf("self-update/rollback is disabled by Startwork patch; upgrade via the deploy pipeline")
+	}
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get executable path: %w", err)
