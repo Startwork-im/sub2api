@@ -426,6 +426,9 @@ func TestLogOpenAIWSBindResponseAccountWarn(t *testing.T) {
 		logOpenAIWSBindResponseAccountWarn(1, 2, "resp_ok", nil)
 	})
 	require.NotPanics(t, func() {
+		logOpenAIWSBindResponseAccountWarn(1, 2, "resp_canceled", context.Canceled)
+	})
+	require.NotPanics(t, func() {
 		logOpenAIWSBindResponseAccountWarn(1, 2, "resp_err", errors.New("bind failed"))
 	})
 }

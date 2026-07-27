@@ -422,7 +422,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				// Slot acquired: no longer waiting in queue.
 				releaseWait()
 				if err := h.gatewayService.BindStickySession(c.Request.Context(), apiKey.GroupID, sessionKey, account.ID); err != nil {
-					reqLog.Warn("gateway.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+					logStickySessionBindFailure(reqLog, "gateway.bind_sticky_session_failed", account.ID, err)
 				}
 			}
 			// 账号槽位/等待计数需要在超时或断开时安全回收
@@ -473,6 +473,23 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						failoverClientGone(c)
 						return
 					}
+				}
+				if result != nil && result.ClientDisconnect {
+					reqLog.Info("gateway.client_disconnected",
+						zap.Int64("account_id", account.ID),
+						zap.Bool("client_disconnected", true),
+						zap.Error(err),
+					)
+					return
+				}
+				clientGone := failoverClientGone(c)
+				if errors.Is(err, context.Canceled) || clientGone {
+					reqLog.Info("gateway.request_canceled",
+						zap.Int64("account_id", account.ID),
+						zap.Bool("request_canceled", true),
+						zap.Error(err),
+					)
+					return
 				}
 				upstreamErrorAlreadyCommunicated := gatewayForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
@@ -726,7 +743,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					zap.Int64("account_id", account.ID),
 				)
 				if err := h.gatewayService.BindStickySession(c.Request.Context(), currentAPIKey.GroupID, sessionKey, account.ID); err != nil {
-					reqLog.Warn("gateway.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+					logStickySessionBindFailure(reqLog, "gateway.bind_sticky_session_failed", account.ID, err)
 				}
 			}
 			// 账号槽位/等待计数需要在超时或断开时安全回收
@@ -901,6 +918,23 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						return
 					}
 				}
+				if result != nil && result.ClientDisconnect {
+					reqLog.Info("gateway.client_disconnected",
+						zap.Int64("account_id", account.ID),
+						zap.Bool("client_disconnected", true),
+						zap.Error(err),
+					)
+					return
+				}
+				clientGone := failoverClientGone(c)
+				if errors.Is(err, context.Canceled) || clientGone {
+					reqLog.Info("gateway.request_canceled",
+						zap.Int64("account_id", account.ID),
+						zap.Bool("request_canceled", true),
+						zap.Error(err),
+					)
+					return
+				}
 				upstreamErrorAlreadyCommunicated := gatewayForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
 				if !upstreamErrorAlreadyCommunicated {
@@ -944,7 +978,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			//   下次请求粘性账号恢复后仍可命中
 			if sessionKey != "" && (sessionBoundAccountID == 0 || sessionBoundAccountID == account.ID) {
 				if err := h.gatewayService.BindStickySession(c.Request.Context(), currentAPIKey.GroupID, sessionKey, account.ID); err != nil {
-					reqLog.Warn("gateway.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+					logStickySessionBindFailure(reqLog, "gateway.bind_sticky_session_failed", account.ID, err)
 				}
 			}
 

@@ -517,12 +517,22 @@ func logOpenAIWSBindResponseAccountWarn(groupID, accountID int64, responseID str
 	if err == nil {
 		return
 	}
-	logger.L().Warn(
-		"openai.ws_bind_response_account_failed",
+	fields := []zap.Field{
 		zap.Int64("group_id", groupID),
 		zap.Int64("account_id", accountID),
 		zap.String("response_id", truncateOpenAIWSLogValue(responseID, openAIWSIDValueMaxLen)),
 		zap.Error(err),
+	}
+	if errors.Is(err, context.Canceled) {
+		logger.L().Info(
+			"openai.ws_bind_response_account_skipped",
+			append(fields, zap.Bool("request_canceled", true))...,
+		)
+		return
+	}
+	logger.L().Warn(
+		"openai.ws_bind_response_account_failed",
+		fields...,
 	)
 }
 

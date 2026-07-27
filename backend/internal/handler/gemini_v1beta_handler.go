@@ -455,7 +455,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 				accountWaitCounted = false
 			}
 			if err := h.gatewayService.BindStickySession(c.Request.Context(), apiKey.GroupID, sessionKey, account.ID); err != nil {
-				reqLog.Warn("gemini.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+				logStickySessionBindFailure(reqLog, "gemini.bind_sticky_session_failed", account.ID, err)
 			}
 		}
 		// 账号槽位/等待计数需要在超时或断开时安全回收
