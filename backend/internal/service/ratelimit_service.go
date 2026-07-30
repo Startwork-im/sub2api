@@ -268,6 +268,14 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 // 返回是否应该停止该账号的调度
 func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) (shouldDisable bool) {
 	ctx = withTempUnschedulableModel(ctx, requestedModel)
+	if statusCode == http.StatusForbidden && isImageGenerationGroupPermissionError(responseBody) {
+		slog.Warn(
+			"image_generation_group_permission_error_skipped_account_penalty",
+			"account_id", account.ID,
+			"platform", account.Platform,
+		)
+		return false
+	}
 	customErrorCodesEnabled := account.IsCustomErrorCodesEnabled()
 
 	// 池模式默认不标记本地账号状态；但管理员显式配置的临时不可调度规则优先。
@@ -486,6 +494,11 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 	}
 
 	return shouldDisable
+}
+
+func isImageGenerationGroupPermissionError(responseBody []byte) bool {
+	body := strings.ToLower(strings.TrimSpace(string(responseBody)))
+	return body != "" && strings.Contains(body, strings.ToLower(imageGenerationPermissionMessage))
 }
 
 // PreCheckUsage proactively checks local quota before dispatching a request.
