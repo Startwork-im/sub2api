@@ -272,6 +272,14 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 // 返回是否应该停止该账号的调度
 func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) (shouldDisable bool) {
 	ctx = withTempUnschedulableModel(ctx, requestedModel)
+	if statusCode == http.StatusForbidden && isImageGenerationGroupPermissionError(responseBody) {
+		slog.Warn(
+			"image_generation_group_permission_error_skipped_account_penalty",
+			"account_id", account.ID,
+			"platform", account.Platform,
+		)
+		return false
+	}
 	// Team 联动熔断必须先于池模式/自定义错误码/临时不可调度的各类早退；
 	// 同请求内与 fastpath 调用点的重复触发由方法内去重吸收。
 	s.maybeHandleOpenAITeamLinkedError(ctx, account, statusCode, responseBody)
@@ -500,6 +508,11 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 	}
 
 	return shouldDisable
+}
+
+func isImageGenerationGroupPermissionError(responseBody []byte) bool {
+	body := strings.ToLower(strings.TrimSpace(string(responseBody)))
+	return body != "" && strings.Contains(body, strings.ToLower(imageGenerationPermissionMessage))
 }
 
 // PreCheckUsage proactively checks local quota before dispatching a request.
