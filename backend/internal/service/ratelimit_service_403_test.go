@@ -86,3 +86,49 @@ func TestRateLimitService_HandleUpstreamError_OpenAI403ThresholdDisables(t *test
 	require.Contains(t, repo.lastErrorMsg, "workspace forbidden by policy")
 	require.Contains(t, repo.lastErrorMsg, "consecutive_403=3/3")
 }
+
+func TestRateLimitService_HandleUpstreamError_ImageGenerationGroupPermissionDoesNotPenalizeAccount(t *testing.T) {
+	repo := &rateLimitAccountRepoStub{}
+	counter := &openAI403CounterCacheStub{counts: []int64{3}}
+	blocker := &runtimeBlockRecorder{}
+	service := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	service.SetOpenAI403CounterCache(counter)
+	service.SetAccountRuntimeBlocker(blocker)
+	account := &Account{
+		ID:       303,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"custom_error_codes_enabled": true,
+			"custom_error_codes":         []any{float64(http.StatusForbidden)},
+			"temp_unschedulable_enabled": true,
+			"temp_unschedulable_rules": []any{
+				map[string]any{
+					"status_codes": []any{float64(http.StatusForbidden)},
+					"keywords":     []any{"image generation"},
+					"duration":     float64(10),
+					"unit":         "minutes",
+				},
+			},
+		},
+	}
+
+	shouldDisable := service.HandleUpstreamError(
+		context.Background(),
+		account,
+		http.StatusForbidden,
+		http.Header{},
+		[]byte(`{"error":{"message":"Image generation is not enabled for this group"}}`),
+	)
+
+	require.False(t, shouldDisable)
+	require.Zero(t, repo.setErrorCalls)
+	require.Zero(t, repo.tempCalls)
+	require.Empty(t, blocker.accounts)
+	require.Zero(t, counter.incrementCalls)
+}
+
+func TestIsImageGenerationGroupPermissionError(t *testing.T) {
+	require.True(t, isImageGenerationGroupPermissionError([]byte(`{"message":"IMAGE GENERATION IS NOT ENABLED FOR THIS GROUP"}`)))
+	require.False(t, isImageGenerationGroupPermissionError([]byte(`{"message":"workspace forbidden by policy"}`)))
+}
