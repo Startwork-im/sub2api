@@ -171,8 +171,8 @@ func TestUpdateServiceRollbackToVersionRejectsDisallowedTargets(t *testing.T) {
 }
 
 func TestUpdateServiceRollbackToVersionAcceptsVPrefix(t *testing.T) {
-	// No platform asset in the release: the target passes the allowlist check
-	// and fails later at asset lookup, proving the version itself was accepted.
+	// The target passes the allowlist check, then the Startwork patch blocks
+	// binary replacement through the deployment pipeline.
 	releases := []*GitHubRelease{
 		{TagName: "v0.1.147"},
 		{TagName: "v0.1.146"},
@@ -183,5 +183,5 @@ func TestUpdateServiceRollbackToVersionAcceptsVPrefix(t *testing.T) {
 
 	require.Error(t, err)
 	require.NotErrorIs(t, err, ErrRollbackVersionNotAllowed)
-	require.Contains(t, err.Error(), "no compatible release found")
+	require.Contains(t, err.Error(), "self-update/rollback is disabled by Startwork patch")
 }
